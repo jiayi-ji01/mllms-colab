@@ -311,7 +311,10 @@ def load_checkpoint(
     np.random.set_state(checkpoint["numpy_rng_state"])
     random.setstate(checkpoint["python_rng_state"])
     if device.type == "cuda" and "cuda_rng_state_all" in checkpoint:
-        torch.cuda.set_rng_state_all(checkpoint["cuda_rng_state_all"])
+        cuda_rng_states = [
+            state.cpu() for state in checkpoint["cuda_rng_state_all"]
+        ]
+        torch.cuda.set_rng_state_all(cuda_rng_states)
 
     return (
         int(checkpoint["step"]),
