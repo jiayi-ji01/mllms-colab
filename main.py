@@ -12,7 +12,9 @@ COMMANDS = {
     ("blimp", "download"): "blimp.download_blimp",
     ("blimp", "prepare"): "blimp.prepare_blimp",
     ("blimp", "evaluate"): "blimp.evaluate_blimp",
+    ("analyze", "prepare-sva"): "analysis.prepare_sva_pairs",
     ("analyze", "activation-patching"): "analysis.activation_patching",
+    ("plot",): "plots.reports",
 }
 
 HELP = """Usage: mllms COMMAND [ARGS]
@@ -25,7 +27,9 @@ Commands:
   blimp download                  Download BLiMP agreement data
   blimp prepare                   Tokenize BLiMP pairs
   blimp evaluate                  Evaluate a checkpoint on BLiMP
+  analyze prepare-sva             Build aligned SVA pairs for patching
   analyze activation-patching     Run activation patching
+  plot training|blimp|patching    Create figures and CSV summary tables
 """
 
 
