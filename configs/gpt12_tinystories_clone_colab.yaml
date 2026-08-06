@@ -1,0 +1,41 @@
+# SentencePiece vocabulary is 4,096. The model vocabulary resolves to 8,192
+# because original and cloned languages use disjoint token-ID spaces.
+model:
+  vocab_size: 4096
+  n_layers: 12
+  n_heads: 4
+  d_model: 256
+  d_ff: 1024
+  block_size: 256
+  dropout: 0.1
+  bias: true
+
+data:
+  data_dir: data/processed
+  tokenizer_path: artifacts/tokenizer/tokenizer.model
+  p_clone: 0.5
+
+training:
+  micro_batch_size: 8
+  gradient_accumulation_steps: 4
+  target_seen_tokens: 200000000
+  max_steps: null
+  learning_rate: 0.0003
+  min_learning_rate: 0.00003
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  warmup_ratio: 0.01
+  warmup_steps: null
+  grad_clip: 1.0
+  log_interval: 10
+  eval_interval: 500
+  eval_batches: 20
+  checkpoint_interval: 1000
+  early_stopping_patience: null
+
+runtime:
+  device: auto
+  seed: 42
+  output_dir: /content/drive/MyDrive/mllms-colab/runs/gpt12_tinystories_clone_colab
+  resume: null

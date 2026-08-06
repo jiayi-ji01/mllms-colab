@@ -1,0 +1,6 @@
+# PyTorch is provided by the Colab CUDA runtime; do not replace it here.
+datasets==5.0.1
+matplotlib==3.11.1
+PyYAML==6.0.2
+sentencepiece==0.2.2
+tqdm==4.70.0
