@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mllms-colab"
+version = "0.1.0"
+description = "TinyStories cloned-language GPT experiments"
+requires-python = ">=3.10"
+
+[project.scripts]
+mllms = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "train"]
+
+[tool.setuptools.packages.find]
+include = ["analysis*", "blimp*", "data_lib*", "model*", "tokenizer*"]

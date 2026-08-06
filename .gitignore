@@ -1,0 +1,29 @@
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local datasets, tokenizer artifacts, and training outputs
+data/
+artifacts/
+outputs/
+checkpoints/
+wandb/
+
+# Large generated files wherever they are placed
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.model
+
+# Notebook execution state
+.ipynb_checkpoints/
