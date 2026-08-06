@@ -15,4 +15,4 @@ mllms = "main:main"
 py-modules = ["main", "train"]
 
 [tool.setuptools.packages.find]
-include = ["analysis*", "blimp*", "data_lib*", "model*", "tokenizer*"]
+include = ["analysis*", "blimp*", "data_lib*", "model*", "plots*", "tokenizer*"]

@@ -25,6 +25,8 @@
 │   └── evaluate_blimp.py
 ├── analysis/
 │   └── activation_patching.py
+├── plots/
+│   └── reports.py                 训练、BLiMP 与 patching 报告
 ├── notebooks/
 ├── configs/
 │   └── gpt12_tinystories_clone_colab.yaml
@@ -34,6 +36,14 @@
 
 数据、tokenizer、checkpoint 和实验输出分别写入 `data/`、`artifacts/` 和
 配置的 `output_dir`，不会提交到 Git。
+
+## End-to-end Colab notebook
+
+[Open the complete pipeline in Colab](https://colab.research.google.com/github/jiayi-ji01/mllms-colab/blob/main/notebooks/mllms_colab_end_to_end.ipynb)
+
+Notebook 会依次完成环境安装、数据准备或从 Drive 恢复、训练或续训、训练曲线、
+BLiMP 评估、original/clone activation patching，以及 PNG/CSV 报告展示。首次
+运行前在 Colab 中选择 GPU runtime。
 
 ## Colab 安装
 
@@ -104,9 +114,14 @@ size 32，同时将 `gradient_accumulation_steps` 改为 8。
 ## BLiMP
 
 ```bash
+RUN_DIR=/content/drive/MyDrive/mllms-colab/runs/gpt12_tinystories_clone_colab
+CHECKPOINT=$RUN_DIR/best.pt
+
 mllms blimp download
-mllms blimp prepare --checkpoint CHECKPOINT_PATH
-mllms blimp evaluate --checkpoint CHECKPOINT_PATH
+mllms blimp prepare --checkpoint "$CHECKPOINT"
+mllms blimp evaluate \
+  --checkpoint "$CHECKPOINT" \
+  --output-dir "$RUN_DIR/blimp"
 ```
 
 查看全部入口：
@@ -114,3 +129,44 @@ mllms blimp evaluate --checkpoint CHECKPOINT_PATH
 ```bash
 mllms --help
 ```
+
+## Colab 查看图表
+
+训练结束或中断后生成预训练报告：
+
+```python
+from IPython.display import Image, display
+import pandas as pd
+
+run_dir = (
+    "/content/drive/MyDrive/mllms-colab/"
+    "runs/gpt12_tinystories_clone_colab"
+)
+
+!mllms plot training --run-dir "{run_dir}"
+display(Image(filename=f"{run_dir}/training_report.png"))
+display(pd.read_csv(f"{run_dir}/training_summary.csv"))
+```
+
+BLiMP 评估完成后：
+
+```python
+blimp_dir = f"{run_dir}/blimp"
+
+!mllms plot blimp --results-dir "{blimp_dir}"
+display(Image(filename=f"{blimp_dir}/blimp_report.png"))
+display(pd.read_csv(f"{blimp_dir}/blimp_summary.csv"))
+```
+
+Activation patching 完成后：
+
+```python
+patching_dir = f"{run_dir}/activation_patching"
+
+!mllms plot patching --results-dir "{patching_dir}"
+display(Image(filename=f"{patching_dir}/patching_report.png"))
+display(pd.read_csv(f"{patching_dir}/patching_top_sites.csv"))
+```
+
+三个命令同时生成 CSV 表格：`training_summary.csv`、
+`blimp_summary.csv` 和 `patching_top_sites.csv`。
