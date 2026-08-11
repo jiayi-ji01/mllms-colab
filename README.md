@@ -1,6 +1,7 @@
 # MLLMs Colab
 
-在 TinyStories 上训练 original/cloned-language GPT 的精简项目。代码直接按
+训练 original/cloned-language GPT 的精简项目，支持 TinyStories 和 BabyLM。
+代码直接按
 功能放在仓库根目录，不使用额外的 `src/`、`scripts/` 或项目名包装层。
 
 ## 结构
@@ -14,6 +15,7 @@
 │   └── model.py                  decoder-only GPT
 ├── data_lib/
 │   ├── cloned.py                 cloned mapping 与 TokenStream
+│   ├── prepare_babylm.py         BabyLM 100M 官方数据准备
 │   └── prepare_tinystories.py    TinyStories 固定划分
 ├── tokenizer/
 │   ├── tokenizer.py              SentencePiece 加载
@@ -29,6 +31,7 @@
 │   └── reports.py                 训练、BLiMP 与 patching 报告
 ├── notebooks/
 ├── configs/
+│   ├── gpt12_babylm_clone_colab.yaml
 │   └── gpt12_tinystories_clone_colab.yaml
 ├── requirements.txt
 └── pyproject.toml
@@ -44,6 +47,10 @@
 Notebook 会依次完成环境安装、数据准备或从 Drive 恢复、训练或续训、训练曲线、
 BLiMP 评估、original/clone activation patching，以及 PNG/CSV 报告展示。首次
 运行前在 Colab 中选择 GPU runtime。
+
+BabyLM 100M 的独立 end-to-end notebook：
+
+[Open the BabyLM pipeline in Colab](https://colab.research.google.com/github/jiayi-ji01/mllms-colab/blob/main/notebooks/mllms_babylm_colab_end_to_end.ipynb)
 
 ## Colab 安装
 
@@ -67,6 +74,8 @@ PyTorch。
 
 ## 数据准备
 
+TinyStories：
+
 ```bash
 mllms data prepare
 mllms tokenizer train
@@ -76,6 +85,50 @@ mllms data tokenize --target-train-tokens 100000000
 tokenize 阶段按实际 SentencePiece token 数停止，不根据文本大小估算。
 精确统计写入 `data/processed/token_counts.json`，validation/test 保持固定且不
 混入训练集。
+
+BabyLM 100M（在 Colab 中运行，不会下载到本地电脑）：
+
+```bash
+mllms data prepare-babylm --output-dir data/babylm/raw
+mllms tokenizer train \
+  --input data/babylm/raw/train.txt \
+  --model-prefix artifacts/babylm_tokenizer/tokenizer \
+  --vocab-size 16000 \
+  --input-sentence-size 5000000
+mllms data tokenize \
+  --input-dir data/babylm/raw \
+  --output-dir data/babylm/processed \
+  --tokenizer artifacts/babylm_tokenizer/tokenizer.model \
+  --no-train-token-limit
+```
+
+BabyLM 下载使用官方 `cambridge-climb/BabyLM` cleaned 100M-word strict
+training corpus，以及独立的官方 dev/test。实际 SentencePiece token 数写入
+`data/babylm/processed/token_counts.json`。
+
+## BabyLM 12 层 Colab 训练
+
+```bash
+mllms train --config configs/gpt12_babylm_clone_colab.yaml
+```
+
+配置为 12 layers、8 heads、`d_model=512`、`d_ff=2048`、context 256，
+SentencePiece vocabulary 16000；cloned mapping 后模型 vocabulary 为 32000。
+默认 micro batch 4、gradient accumulation 8，每步仍处理 8192 tokens。
+训练步数会在 tokenization 后根据实际训练 token 数自动计算为 nominal 2 epochs，
+使 original/clone 各自期望获得约一份语料量。输出使用新的 Drive 目录：
+
+```text
+/content/drive/MyDrive/mllms-colab/runs/gpt12_babylm_clone_colab/
+```
+
+恢复训练：
+
+```bash
+mllms train \
+  --config configs/gpt12_babylm_clone_colab.yaml \
+  --resume /content/drive/MyDrive/mllms-colab/runs/gpt12_babylm_clone_colab/latest.pt
+```
 
 ## 12 层 Colab 训练
 
@@ -129,6 +182,33 @@ mllms blimp evaluate \
 ```bash
 mllms --help
 ```
+
+BabyLM 模型的严格 one-token verb logit SVA 评估：
+
+```bash
+RUN_DIR=/content/drive/MyDrive/mllms-colab/runs/gpt12_babylm_clone_colab
+TOKENIZER=artifacts/babylm_tokenizer/tokenizer.model
+BLIMP_DATA=data/blimp/processed/babylm_agreement.jsonl
+
+mllms blimp download
+mllms blimp prepare \
+  --checkpoint "$RUN_DIR/best.pt" \
+  --tokenizer "$TOKENIZER" \
+  --output "$BLIMP_DATA"
+mllms blimp evaluate \
+  --checkpoint "$RUN_DIR/best.pt" \
+  --tokenizer "$TOKENIZER" \
+  --data "$BLIMP_DATA" \
+  --scoring verb-logit \
+  --device cuda \
+  --output-dir "$RUN_DIR/blimp_sva_logit"
+```
+
+`verb-logit` 只保留共享前缀且两个候选动词均为单个 SentencePiece token 的
+BLiMP 样本，因此每个样本严格计算
+`logit(correct_verb) - logit(incorrect_verb)`。原有可比评估仍可通过
+`--scoring conditional-logprob` 运行，并建议保存到单独的 `blimp_conditional`
+目录。
 
 ## Colab 查看图表
 

@@ -46,7 +46,8 @@ class TrainingConfig:
 
     micro_batch_size: int = 8
     gradient_accumulation_steps: int = 4
-    target_seen_tokens: int = 200_000_000
+    target_seen_tokens: int | None = 200_000_000
+    target_epochs: float | None = None
     max_steps: int | None = None
     learning_rate: float = 3e-4
     min_learning_rate: float = 3e-5
@@ -73,7 +74,6 @@ class TrainingConfig:
             "d_ff": self.d_ff,
             "micro_batch_size": self.micro_batch_size,
             "gradient_accumulation_steps": self.gradient_accumulation_steps,
-            "target_seen_tokens": self.target_seen_tokens,
             "learning_rate": self.learning_rate,
             "grad_clip": self.grad_clip,
             "log_interval": self.log_interval,
@@ -81,6 +81,10 @@ class TrainingConfig:
             "eval_batches": self.eval_batches,
             "checkpoint_interval": self.checkpoint_interval,
         }
+        if self.target_seen_tokens is not None:
+            positive["target_seen_tokens"] = self.target_seen_tokens
+        if self.target_epochs is not None:
+            positive["target_epochs"] = self.target_epochs
         if self.max_steps is not None:
             positive["max_steps"] = self.max_steps
         if self.warmup_steps is not None:
@@ -90,6 +94,14 @@ class TrainingConfig:
         for name, value in positive.items():
             if value <= 0:
                 raise ValueError(f"{name} must be positive")
+
+        if self.target_seen_tokens is None and self.target_epochs is None:
+            if self.max_steps is None:
+                raise ValueError(
+                    "set target_seen_tokens, target_epochs, or max_steps"
+                )
+        if self.target_seen_tokens is not None and self.target_epochs is not None:
+            raise ValueError("set target_seen_tokens or target_epochs, not both")
 
         if self.d_model % self.n_heads != 0:
             raise ValueError("d_model must be divisible by n_heads")
@@ -119,17 +131,21 @@ class TrainingConfig:
     def effective_batch_size(self) -> int:
         return self.micro_batch_size * self.gradient_accumulation_steps
 
-    @property
-    def resolved_max_steps(self) -> int:
+    def resolve_max_steps(self, train_dataset_tokens: int) -> int:
         if self.max_steps is not None:
             return self.max_steps
-        return math.ceil(self.target_seen_tokens / self.tokens_per_step)
+        if self.target_seen_tokens is not None:
+            target_tokens = self.target_seen_tokens
+        elif self.target_epochs is not None:
+            target_tokens = math.ceil(self.target_epochs * train_dataset_tokens)
+        else:
+            raise RuntimeError("training length was not configured")
+        return math.ceil(target_tokens / self.tokens_per_step)
 
-    @property
-    def resolved_warmup_steps(self) -> int:
+    def resolve_warmup_steps(self, max_steps: int) -> int:
         if self.warmup_steps is not None:
             return self.warmup_steps
-        return math.ceil(self.warmup_ratio * self.resolved_max_steps)
+        return math.ceil(self.warmup_ratio * max_steps)
 
 
 def _autocast_context(device: torch.device, precision: str):
@@ -170,9 +186,9 @@ def _make_grad_scaler(enabled: bool):
 def _make_scheduler(
     optimizer: torch.optim.Optimizer,
     config: TrainingConfig,
+    max_steps: int,
+    warmup_steps: int,
 ) -> torch.optim.lr_scheduler.LambdaLR:
-    warmup_steps = config.resolved_warmup_steps
-    max_steps = config.resolved_max_steps
     min_ratio = config.min_learning_rate / config.learning_rate
 
     if warmup_steps >= max_steps:
@@ -355,6 +371,8 @@ def train(config: TrainingConfig) -> None:
     )
     train_stream = TokenStream(config.data_dir, "train")
     validation_stream = TokenStream(config.data_dir, "validation")
+    max_steps = config.resolve_max_steps(len(train_stream.tokens))
+    warmup_steps = config.resolve_warmup_steps(max_steps)
 
     model_config = GPTConfig(
         vocab_size=clone_mapper.model_vocab_size,
@@ -373,7 +391,7 @@ def train(config: TrainingConfig) -> None:
         betas=(config.beta1, config.beta2),
         weight_decay=config.weight_decay,
     )
-    scheduler = _make_scheduler(optimizer, config)
+    scheduler = _make_scheduler(optimizer, config, max_steps, warmup_steps)
     scaler = _make_grad_scaler(enabled=precision == "fp16")
 
     start_step = 0
@@ -410,8 +428,8 @@ def train(config: TrainingConfig) -> None:
             {
                 "model": asdict(model_config),
                 "training": asdict(config),
-                "resolved_max_steps": config.resolved_max_steps,
-                "resolved_warmup_steps": config.resolved_warmup_steps,
+                "resolved_max_steps": max_steps,
+                "resolved_warmup_steps": warmup_steps,
                 "tokens_per_step": config.tokens_per_step,
                 "actual_train_dataset_tokens": len(train_stream.tokens),
                 "parameter_count": parameter_count,
@@ -428,10 +446,11 @@ def train(config: TrainingConfig) -> None:
     print(f"Train dataset tokens (actual tokenized count): {len(train_stream.tokens):,}")
     print(f"Effective batch size: {config.effective_batch_size:,} sequences")
     print(f"Tokens per optimizer step: {config.tokens_per_step:,}")
-    print(f"Optimizer steps: {config.resolved_max_steps:,}")
-    print(f"Planned tokens seen: {config.resolved_max_steps * config.tokens_per_step:,}")
-    print(f"Nominal epochs: {config.target_seen_tokens / len(train_stream.tokens):.3f}")
-    print(f"Warmup steps: {config.resolved_warmup_steps:,}")
+    planned_tokens = max_steps * config.tokens_per_step
+    print(f"Optimizer steps: {max_steps:,}")
+    print(f"Planned tokens seen: {planned_tokens:,}")
+    print(f"Nominal epochs: {planned_tokens / len(train_stream.tokens):.3f}")
+    print(f"Warmup steps: {warmup_steps:,}")
     print(f"Output directory: {output_dir}")
     print(f"Starting step: {start_step:,}")
 
@@ -440,7 +459,7 @@ def train(config: TrainingConfig) -> None:
     model.train()
     try:
         with log_path.open("a", encoding="utf-8") as log_file:
-            for step in range(start_step, config.resolved_max_steps):
+            for step in range(start_step, max_steps):
                 optimizer.zero_grad(set_to_none=True)
                 accumulated_loss = 0.0
                 step_original_tokens = 0
@@ -486,7 +505,11 @@ def train(config: TrainingConfig) -> None:
                     accumulated_loss / config.gradient_accumulation_steps
                 )
 
-                if completed_step % config.log_interval == 0 or completed_step == 1:
+                if (
+                    completed_step % config.log_interval == 0
+                    or completed_step == 1
+                    or completed_step == max_steps
+                ):
                     train_record = {
                         "type": "train",
                         "step": completed_step,
@@ -506,7 +529,7 @@ def train(config: TrainingConfig) -> None:
 
                 should_evaluate = (
                     completed_step % config.eval_interval == 0
-                    or completed_step == config.resolved_max_steps
+                    or completed_step == max_steps
                 )
                 if should_evaluate:
                     metrics = evaluate(
@@ -645,6 +668,7 @@ def parse_args() -> TrainingConfig:
     parser.add_argument("--micro-batch-size", type=int)
     parser.add_argument("--gradient-accumulation-steps", type=int)
     parser.add_argument("--target-seen-tokens", type=int)
+    parser.add_argument("--target-epochs", type=float)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--early-stopping-patience", type=int)
