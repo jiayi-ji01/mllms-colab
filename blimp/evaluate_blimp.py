@@ -96,12 +96,96 @@ def score_requests(
     return [dict(result) for result in results]
 
 
+@torch.no_grad()
+def score_verb_logits(
+    model: GPT,
+    records: list[dict],
+    language: str,
+    eos_id: int,
+    batch_size: int,
+    device: torch.device,
+) -> list[dict[str, float]]:
+    """Compare one-token correct/incorrect verbs after the same prefix."""
+    results: list[dict[str, float]] = [{} for _ in records]
+    groups: dict[int, list[tuple[int, list[int], int, int]]] = defaultdict(list)
+    for index, record in enumerate(records):
+        ids = record[language]
+        sequence = [eos_id, *ids["prefix_good_ids"]]
+        groups[len(sequence)].append(
+            (
+                index,
+                sequence,
+                ids["correct_verb_ids"][0],
+                ids["incorrect_verb_ids"][0],
+            )
+        )
+
+    for sequence_length in sorted(groups):
+        group = groups[sequence_length]
+        for start in range(0, len(group), batch_size):
+            batch = group[start : start + batch_size]
+            sequences = torch.tensor(
+                [item[1] for item in batch],
+                dtype=torch.long,
+                device=device,
+            )
+            logits, _ = model(sequences)
+            final_logits = logits[:, -1]
+            correct_ids = torch.tensor(
+                [item[2] for item in batch], device=device
+            )
+            incorrect_ids = torch.tensor(
+                [item[3] for item in batch], device=device
+            )
+            row_indices = torch.arange(len(batch), device=device)
+            correct_logits = final_logits[row_indices, correct_ids]
+            incorrect_logits = final_logits[row_indices, incorrect_ids]
+            differences = correct_logits - incorrect_logits
+
+            for item, correct, incorrect, difference in zip(
+                batch,
+                correct_logits.cpu().tolist(),
+                incorrect_logits.cpu().tolist(),
+                differences.cpu().tolist(),
+            ):
+                index = item[0]
+                results[index] = {
+                    "correct_verb_logit": correct,
+                    "incorrect_verb_logit": incorrect,
+                    "logit_diff": difference,
+                    # Keep the common field so existing tables remain usable.
+                    "margin": difference,
+                    "correct": difference > 0.0,
+                }
+
+    return results
+
+
+def select_verb_logit_records(records: list[dict]) -> tuple[list[dict], dict]:
+    """Select BLiMP rows where a literal two-logit comparison is defined."""
+    accepted = []
+    excluded = defaultdict(int)
+    for record in records:
+        ids = record["original"]
+        if record["scoring_method"] != "one_prefix":
+            excluded["different_prefixes"] += 1
+        elif ids["prefix_good_ids"] != ids["prefix_bad_ids"]:
+            excluded["different_tokenized_prefixes"] += 1
+        elif len(ids["correct_verb_ids"]) != 1:
+            excluded["correct_verb_is_not_one_token"] += 1
+        elif len(ids["incorrect_verb_ids"]) != 1:
+            excluded["incorrect_verb_is_not_one_token"] += 1
+        else:
+            accepted.append(record)
+    return accepted, dict(excluded)
+
+
 def summarize(rows: list[dict]) -> dict:
     original_correct = [row["original"]["correct"] for row in rows]
     clone_correct = [row["clone"]["correct"] for row in rows]
     count = len(rows)
 
-    return {
+    summary = {
         "num_examples": count,
         "original_accuracy": sum(original_correct) / count,
         "clone_accuracy": sum(clone_correct) / count,
@@ -109,12 +193,6 @@ def summarize(rows: list[dict]) -> dict:
             row["original"]["margin"] for row in rows
         ) / count,
         "clone_mean_margin": sum(row["clone"]["margin"] for row in rows) / count,
-        "original_sentence_accuracy": sum(
-            row["original"]["sentence_correct"] for row in rows
-        ) / count,
-        "clone_sentence_accuracy": sum(
-            row["clone"]["sentence_correct"] for row in rows
-        ) / count,
         "original_clone_accuracy_gap": (
             sum(original_correct) - sum(clone_correct)
         ) / count,
@@ -139,6 +217,17 @@ def summarize(rows: list[dict]) -> dict:
             for original, clone in zip(original_correct, clone_correct)
         ),
     }
+    if "sentence_correct" in rows[0]["original"]:
+        summary["original_sentence_accuracy"] = sum(
+            row["original"]["sentence_correct"] for row in rows
+        ) / count
+        summary["clone_sentence_accuracy"] = sum(
+            row["clone"]["sentence_correct"] for row in rows
+        ) / count
+    if "logit_diff" in rows[0]["original"]:
+        summary["original_mean_logit_diff"] = summary["original_mean_margin"]
+        summary["clone_mean_logit_diff"] = summary["clone_mean_margin"]
+    return summary
 
 
 def parse_args() -> argparse.Namespace:
@@ -153,8 +242,22 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("outputs/training/best.pt"),
     )
+    parser.add_argument(
+        "--tokenizer",
+        type=Path,
+        default=Path("artifacts/tokenizer/tokenizer.model"),
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/blimp"))
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument(
+        "--scoring",
+        choices=("conditional-logprob", "verb-logit"),
+        default="conditional-logprob",
+        help=(
+            "Use the existing conditional score, or compare raw logits for "
+            "one-token verb alternatives after an identical prefix."
+        ),
+    )
     parser.add_argument(
         "--device",
         choices=("auto", "cpu", "cuda", "mps"),
@@ -187,7 +290,7 @@ def main() -> None:
     model.load_state_dict(checkpoint["model"])
     model.eval()
 
-    tokenizer = load_tokenizer()
+    tokenizer = load_tokenizer(args.tokenizer)
     mapper = ClonedMapper(
         original_vocab_size=tokenizer.vocab_size(),
         pad_id=tokenizer.pad_id(),
@@ -200,19 +303,35 @@ def main() -> None:
     if not records:
         raise ValueError(f"No preprocessed examples found in {args.data}")
 
+    excluded: dict[str, int] = {}
+    if args.scoring == "verb-logit":
+        records, excluded = select_verb_logit_records(records)
+        if not records:
+            raise ValueError("No BLiMP rows support a one-token verb-logit score")
+
     language_scores = {}
     for language_id, language in ((0, "original"), (1, "clone")):
         eos_id = mapper.map_to_language(
             torch.tensor([tokenizer.eos_id()]),
             language_id,
         ).item()
-        requests = build_requests(records, language, eos_id)
-        language_scores[language] = score_requests(
-            model,
-            requests,
-            args.batch_size,
-            device,
-        )
+        if args.scoring == "verb-logit":
+            language_scores[language] = score_verb_logits(
+                model,
+                records,
+                language,
+                eos_id,
+                args.batch_size,
+                device,
+            )
+        else:
+            requests = build_requests(records, language, eos_id)
+            language_scores[language] = score_requests(
+                model,
+                requests,
+                args.batch_size,
+                device,
+            )
 
     results = []
     for index, record in enumerate(records):
@@ -232,6 +351,9 @@ def main() -> None:
         }
         for language in ("original", "clone"):
             scores = language_scores[language][index]
+            if args.scoring == "verb-logit":
+                result[language] = scores
+                continue
             sentence_margin = (
                 scores["sentence_good_logprob"]
                 - scores["sentence_bad_logprob"]
@@ -260,7 +382,13 @@ def main() -> None:
         "checkpoint": str(args.checkpoint),
         "checkpoint_step": int(checkpoint["step"]),
         "device": str(device),
-        "primary_metric": "conditional_verb_margin",
+        "primary_metric": (
+            "verb_logit_diff"
+            if args.scoring == "verb-logit"
+            else "conditional_verb_margin"
+        ),
+        "scoring": args.scoring,
+        "excluded_examples": excluded,
         "overall": summarize(results),
         "by_subtask": {
             subtask: summarize(rows)
@@ -282,13 +410,21 @@ def main() -> None:
     overall = summary["overall"]
     print(f"Checkpoint: {args.checkpoint} (step {checkpoint['step']:,})")
     print(f"Device: {device}")
+    print(f"Scoring: {args.scoring}")
     print(f"Examples: {overall['num_examples']:,}")
+    if excluded:
+        print(f"Excluded: {sum(excluded.values()):,} {excluded}")
     print(f"Original accuracy: {overall['original_accuracy']:.4f}")
     print(f"Clone accuracy: {overall['clone_accuracy']:.4f}")
     print(f"Accuracy gap: {overall['original_clone_accuracy_gap']:+.4f}")
     print(f"Prediction agreement: {overall['prediction_agreement_rate']:.4f}")
-    print(f"Original mean margin: {overall['original_mean_margin']:.4f}")
-    print(f"Clone mean margin: {overall['clone_mean_margin']:.4f}")
+    metric_label = (
+        "mean logit difference"
+        if args.scoring == "verb-logit"
+        else "mean margin"
+    )
+    print(f"Original {metric_label}: {overall['original_mean_margin']:.4f}")
+    print(f"Clone {metric_label}: {overall['clone_mean_margin']:.4f}")
     print(
         "Both correct / both incorrect / original only / clone only: "
         f"{overall['both_correct']:,} / {overall['both_incorrect']:,} / "

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mllms-colab"
 version = "0.1.0"
-description = "TinyStories cloned-language GPT experiments"
+description = "Original/cloned-language GPT pretraining experiments"
 requires-python = ">=3.10"
 
 [project.scripts]
