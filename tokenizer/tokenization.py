@@ -80,12 +80,17 @@ def parse_args() -> argparse.Namespace:
         default=100_000_000,
         help="Stop train.bin after reaching this many actual encoded tokens.",
     )
+    parser.add_argument(
+        "--no-train-token-limit",
+        action="store_true",
+        help="Tokenize the complete training split instead of truncating it.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    if args.target_train_tokens <= 0:
+    if not args.no_train_token_limit and args.target_train_tokens <= 0:
         raise ValueError("target-train-tokens must be positive")
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -100,6 +105,7 @@ def main() -> None:
     print(f"EOS ID: {tokenizer.eos_id()}")
 
     statistics = {}
+    train_target = None if args.no_train_token_limit else args.target_train_tokens
     for split in ("train", "validation", "test"):
         input_file = args.input_dir / f"{split}.txt"
         if not input_file.is_file():
@@ -109,11 +115,11 @@ def main() -> None:
             tokenizer,
             input_file,
             output_file,
-            target_tokens=args.target_train_tokens if split == "train" else None,
+            target_tokens=train_target if split == "train" else None,
         )
 
     train_tokens = statistics["train"]["tokens"]
-    if train_tokens < args.target_train_tokens:
+    if train_target is not None and train_tokens < train_target:
         raise RuntimeError(
             f"Prepared train text produced only {train_tokens:,} tokens; "
             f"target is {args.target_train_tokens:,}. Prepare more train text."
@@ -122,7 +128,7 @@ def main() -> None:
     manifest = {
         "tokenizer": str(args.tokenizer),
         "base_vocab_size": vocab_size,
-        "target_train_tokens": args.target_train_tokens,
+        "target_train_tokens": train_target,
         "splits": statistics,
         "train_language_token_spaces": {
             "original": train_tokens,
