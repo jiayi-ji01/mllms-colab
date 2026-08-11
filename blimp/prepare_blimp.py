@@ -170,6 +170,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("outputs/training/best.pt"),
     )
+    parser.add_argument(
+        "--tokenizer",
+        type=Path,
+        default=Path("artifacts/tokenizer/tokenizer.model"),
+    )
     parser.add_argument("--examples", type=int, default=5)
     return parser.parse_args()
 
@@ -178,7 +183,7 @@ def main() -> None:
     args = parse_args()
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     model_config = GPTConfig(**checkpoint["model_config"])
-    tokenizer = load_tokenizer()
+    tokenizer = load_tokenizer(args.tokenizer)
     mapper = ClonedMapper(
         original_vocab_size=tokenizer.vocab_size(),
         pad_id=tokenizer.pad_id(),

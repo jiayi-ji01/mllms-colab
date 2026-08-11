@@ -15,6 +15,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("artifacts/tokenizer/tokenizer"),
     )
     parser.add_argument("--vocab-size", type=int, default=4096)
+    parser.add_argument(
+        "--input-sentence-size",
+        type=int,
+        default=0,
+        help="Randomly sample this many input lines; 0 uses the full corpus.",
+    )
     return parser.parse_args()
 
 
@@ -22,6 +28,8 @@ def main() -> None:
     args = parse_args()
     if args.vocab_size <= 0:
         raise ValueError("vocab-size must be positive")
+    if args.input_sentence_size < 0:
+        raise ValueError("input-sentence-size must be non-negative")
     if not args.input.is_file():
         raise FileNotFoundError(f"Training corpus not found: {args.input}")
 
@@ -41,6 +49,8 @@ def main() -> None:
         unk_piece="<unk>",
         bos_piece="<bos>",
         eos_piece="<eos>",
+        input_sentence_size=args.input_sentence_size,
+        shuffle_input_sentence=args.input_sentence_size > 0,
     )
 
     print("Tokenizer training completed.")
