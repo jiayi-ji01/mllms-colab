@@ -27,3 +27,9 @@ wandb/
 
 # Notebook execution state
 .ipynb_checkpoints/
+
+# Locally exported experiment results
+/output/
+
+# Generated Jupyter Book website
+/book/_build/
