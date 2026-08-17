@@ -22,9 +22,11 @@ def save_checkpoint(
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     scaler: Any,
     step: int,
+    epoch: float,
     model_config: GPTConfig,
     training_config: TrainingConfig,
     best_validation_loss: float,
+    validation_loss: float,
     tokens_seen: int,
     original_tokens_seen: int,
     clone_tokens_seen: int,
@@ -39,9 +41,11 @@ def save_checkpoint(
         "scheduler": scheduler.state_dict(),
         "scaler": scaler.state_dict(),
         "step": step,
+        "epoch": epoch,
         "model_config": asdict(model_config),
         "training_config": asdict(training_config),
         "best_validation_loss": best_validation_loss,
+        "validation_loss": validation_loss,
         "tokens_seen": tokens_seen,
         "original_tokens_seen": original_tokens_seen,
         "clone_tokens_seen": clone_tokens_seen,
@@ -53,7 +57,9 @@ def save_checkpoint(
     }
     if torch.cuda.is_available():
         state["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
-    torch.save(state, path)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    torch.save(state, temporary_path)
+    temporary_path.replace(path)
 
 
 def load_checkpoint(
@@ -65,7 +71,7 @@ def load_checkpoint(
     generator: torch.Generator,
     expected_model_config: GPTConfig,
     device: torch.device,
-) -> tuple[int, float, int, int, int, int]:
+) -> tuple[int, float, float, int, int, int, int]:
     """Restore model, optimizer, scheduler, scaler, counters, and RNG state."""
     if not path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {path}")
@@ -99,6 +105,7 @@ def load_checkpoint(
     return (
         int(checkpoint["step"]),
         float(checkpoint["best_validation_loss"]),
+        float(checkpoint.get("validation_loss", float("inf"))),
         int(checkpoint["tokens_seen"]),
         int(checkpoint["original_tokens_seen"]),
         int(checkpoint["clone_tokens_seen"]),

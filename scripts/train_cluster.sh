@@ -2,8 +2,8 @@
 set -euo pipefail
 
 REPOSITORY_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-CONFIG=${1:-configs/experiments/gpt12_babylm_clone.yaml}
-RUN_DIR=${2:-outputs/runs/gpt12_babylm_clone}
+CONFIG=${1:-configs/experiments/gpt12_wikipedia_clone.yaml}
+RUN_DIR=${2:-outputs/runs/gpt12_wikipedia_clone}
 VENV_DIR=${VENV_DIR:-"${REPOSITORY_ROOT}/.venv"}
 
 cd "${REPOSITORY_ROOT}"
@@ -14,8 +14,8 @@ if [[ ! -x "${VENV_DIR}/bin/mllms" ]]; then
 fi
 
 mkdir -p "${RUN_DIR}"
-if [[ -f "${RUN_DIR}/final.pt" ]]; then
-  echo "Training already completed: ${RUN_DIR}/final.pt"
+if [[ -f "${RUN_DIR}/last.pt" ]]; then
+  echo "Training already completed: ${RUN_DIR}/last.pt"
   exit 0
 fi
 
@@ -25,9 +25,12 @@ TRAIN_ARGS=(
   --output-dir "${RUN_DIR}"
   --device cuda
 )
-if [[ -f "${RUN_DIR}/latest.pt" ]]; then
-  TRAIN_ARGS+=(--resume "${RUN_DIR}/latest.pt")
-  echo "Resuming from ${RUN_DIR}/latest.pt"
+shopt -s nullglob
+CHECKPOINTS=("${RUN_DIR}"/checkpoints/step_*.pt)
+if (( ${#CHECKPOINTS[@]} > 0 )); then
+  LATEST_CHECKPOINT=${CHECKPOINTS[${#CHECKPOINTS[@]}-1]}
+  TRAIN_ARGS+=(--resume "${LATEST_CHECKPOINT}")
+  echo "Resuming from ${LATEST_CHECKPOINT}"
 fi
 
 exec "${VENV_DIR}/bin/mllms" "${TRAIN_ARGS[@]}"

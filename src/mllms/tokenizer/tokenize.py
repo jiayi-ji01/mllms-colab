@@ -1,4 +1,4 @@
-"""Tokenize prepared TinyStories splits into flat uint16 streams."""
+"""Tokenize prepared train/validation/test text into flat uint16 streams."""
 
 import argparse
 import json

@@ -147,6 +147,7 @@ def train(config: TrainingConfig) -> None:
 
     start_step = 0
     best_validation_loss = float("inf")
+    last_validation_loss = float("inf")
     tokens_seen = 0
     original_tokens_seen = 0
     clone_tokens_seen = 0
@@ -155,6 +156,7 @@ def train(config: TrainingConfig) -> None:
         (
             start_step,
             best_validation_loss,
+            last_validation_loss,
             tokens_seen,
             original_tokens_seen,
             clone_tokens_seen,
@@ -172,6 +174,7 @@ def train(config: TrainingConfig) -> None:
 
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = output_dir / "checkpoints"
     log_path = output_dir / "train_log.jsonl"
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
     (output_dir / "resolved_config.json").write_text(
@@ -306,9 +309,10 @@ def train(config: TrainingConfig) -> None:
                         f"clone {metrics['clone_loss']:.4f} | "
                         f"average {metrics['average_loss']:.4f}"
                     )
+                    last_validation_loss = metrics["average_loss"]
 
-                    if metrics["average_loss"] < best_validation_loss:
-                        best_validation_loss = metrics["average_loss"]
+                    if last_validation_loss < best_validation_loss:
+                        best_validation_loss = last_validation_loss
                         evaluations_without_improvement = 0
                         save_checkpoint(
                             output_dir / "best.pt",
@@ -317,9 +321,11 @@ def train(config: TrainingConfig) -> None:
                             scheduler,
                             scaler,
                             completed_step,
+                            tokens_seen / len(train_stream.tokens),
                             model_config,
                             config,
                             best_validation_loss,
+                            last_validation_loss,
                             tokens_seen,
                             original_tokens_seen,
                             clone_tokens_seen,
@@ -339,22 +345,28 @@ def train(config: TrainingConfig) -> None:
                         break
 
                 if completed_step % config.checkpoint_interval == 0:
+                    checkpoint_path = (
+                        checkpoint_dir / f"step_{completed_step:06d}.pt"
+                    )
                     save_checkpoint(
-                        output_dir / "latest.pt",
+                        checkpoint_path,
                         model,
                         optimizer,
                         scheduler,
                         scaler,
                         completed_step,
+                        tokens_seen / len(train_stream.tokens),
                         model_config,
                         config,
                         best_validation_loss,
+                        last_validation_loss,
                         tokens_seen,
                         original_tokens_seen,
                         clone_tokens_seen,
                         evaluations_without_improvement,
                         generator,
                     )
+                    print(f"Checkpoint: {checkpoint_path}")
     except RuntimeError as error:
         if device.type == "cuda" and "out of memory" in str(error).lower():
             print(
@@ -365,15 +377,17 @@ def train(config: TrainingConfig) -> None:
         raise
 
     save_checkpoint(
-        output_dir / "final.pt",
+        output_dir / "last.pt",
         model,
         optimizer,
         scheduler,
         scaler,
         final_step,
+        tokens_seen / len(train_stream.tokens),
         model_config,
         config,
         best_validation_loss,
+        last_validation_loss,
         tokens_seen,
         original_tokens_seen,
         clone_tokens_seen,
@@ -384,4 +398,3 @@ def train(config: TrainingConfig) -> None:
     print(f"Actual tokens seen: {tokens_seen:,}")
     print(f"Original / clone: {original_tokens_seen:,} / {clone_tokens_seen:,}")
     print(f"Checkpoints and log: {output_dir}")
-

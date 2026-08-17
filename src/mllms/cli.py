@@ -7,6 +7,7 @@ import sys
 COMMANDS = {
     ("data", "prepare"): "mllms.data.tinystories",
     ("data", "prepare-babylm"): "mllms.data.babylm",
+    ("data", "prepare-wikipedia"): "mllms.data.wikipedia",
     ("data", "tokenize"): "mllms.tokenizer.tokenize",
     ("tokenizer", "train"): "mllms.tokenizer.train",
     ("train",): "mllms.training.cli",
@@ -29,6 +30,7 @@ HELP = """Usage: mllms COMMAND [ARGS]
 Commands:
   data prepare                    Prepare fixed TinyStories splits
   data prepare-babylm             Prepare official BabyLM 100M/dev/test
+  data prepare-wikipedia          Prepare English Wikipedia splits
   tokenizer train                 Train the SentencePiece BPE tokenizer
   data tokenize                   Create uint16 token streams
   train                           Train or resume the cloned-language GPT

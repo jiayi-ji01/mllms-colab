@@ -10,8 +10,60 @@ import torch
 from mllms.data.cloned_language import ClonedMapper
 
 
-def read_pairs(path: Path, max_pairs: int | None = None) -> list[dict]:
-    """Read prepared controlled pairs while preserving their fixed order."""
+def _retokenize_pair(record: dict, tokenizer) -> dict:
+    """Align the canonical text fields with the experiment tokenizer."""
+    required_text = {
+        "clean_prompt",
+        "corrupted_prompt",
+        "clean_answer",
+        "corrupted_answer",
+    }
+    missing = required_text - set(record)
+    if missing:
+        raise ValueError(f"cannot retokenize; missing fields: {sorted(missing)}")
+
+    clean_prompt = str(record["clean_prompt"])
+    corrupted_prompt = str(record["corrupted_prompt"])
+    clean_ids = list(tokenizer.encode(clean_prompt, out_type=int))
+    corrupted_ids = list(tokenizer.encode(corrupted_prompt, out_type=int))
+    if len(clean_ids) != len(corrupted_ids):
+        raise ValueError("clean/corrupted prompts have different token lengths")
+
+    def answer_id(prompt: str, prompt_ids: list[int], answer: str) -> int:
+        full_ids = list(tokenizer.encode(f"{prompt} {answer}", out_type=int))
+        if full_ids[: len(prompt_ids)] != prompt_ids:
+            raise ValueError("answer changes prompt tokenization")
+        answer_ids = full_ids[len(prompt_ids) :]
+        if len(answer_ids) != 1:
+            raise ValueError(f"answer {answer!r} is not one tokenizer token")
+        return int(answer_ids[0])
+
+    eos_id = int(tokenizer.eos_id())
+    if eos_id < 0:
+        raise ValueError("tokenizer must define EOS")
+    aligned = dict(record)
+    aligned["clean_input_ids"] = [eos_id, *clean_ids]
+    aligned["corrupted_input_ids"] = [eos_id, *corrupted_ids]
+    aligned["clean_answer_id"] = answer_id(
+        clean_prompt,
+        clean_ids,
+        str(record["clean_answer"]),
+    )
+    aligned["corrupted_answer_id"] = answer_id(
+        corrupted_prompt,
+        corrupted_ids,
+        str(record["corrupted_answer"]),
+    )
+    aligned["prediction_position"] = len(clean_ids)
+    return aligned
+
+
+def read_pairs(
+    path: Path,
+    max_pairs: int | None = None,
+    tokenizer=None,
+) -> list[dict]:
+    """Read pairs in fixed order and optionally align IDs to a tokenizer."""
     pairs = []
     with path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, start=1):
@@ -31,6 +83,11 @@ def read_pairs(path: Path, max_pairs: int | None = None) -> list[dict]:
                 raise ValueError(
                     f"{path}:{line_number} missing fields: {sorted(missing)}"
                 )
+            if tokenizer is not None:
+                try:
+                    record = _retokenize_pair(record, tokenizer)
+                except ValueError as error:
+                    raise ValueError(f"{path}:{line_number}: {error}") from error
             pairs.append(record)
             if max_pairs is not None and len(pairs) >= max_pairs:
                 break

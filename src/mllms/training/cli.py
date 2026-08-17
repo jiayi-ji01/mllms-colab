@@ -25,6 +25,10 @@ def parse_args() -> TrainingConfig:
     parser.add_argument("--target-epochs", type=float)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--warmup-steps", type=int)
+    parser.add_argument("--eval-interval", type=int)
+    parser.add_argument("--eval-batches", type=int)
+    parser.add_argument("--checkpoint-interval", type=int)
     parser.add_argument("--early-stopping-patience", type=int)
     values = vars(parser.parse_args())
 

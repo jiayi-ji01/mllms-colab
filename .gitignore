@@ -12,15 +12,19 @@ __pycache__/
 .venv/
 venv/
 
-# Local datasets, tokenizer artifacts, and training outputs
-data/
-!src/mllms/data/
-!src/mllms/data/**
+# Local datasets, tokenizer artifacts, and training outputs. The small,
+# canonical controlled-SVA benchmark is versioned; corpora remain ignored.
+/data/*
+!/data/sva/
+/data/sva/*
+!/data/sva/controlled_v1/
+!/data/sva/controlled_v1/**
 artifacts/
 outputs/
 checkpoints/
 wandb/
 slurm-*.out
+logs/
 
 # Large generated files wherever they are placed
 *.bin
