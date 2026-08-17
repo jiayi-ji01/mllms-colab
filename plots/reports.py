@@ -220,13 +220,96 @@ def plot_blimp(results_dir: Path, output_dir: Path) -> None:
     print(f"Table: {table_path}")
 
 
-def plot_patching(results_dir: Path, output_dir: Path, top_k: int) -> None:
+def plot_sva(results_dir: Path, output_dir: Path) -> None:
+    """Plot controlled SVA accuracy and correctly oriented logit margins."""
+    summary = json.loads(
+        (results_dir / "sva_summary.json").read_text(encoding="utf-8")
+    )
+    groups = [("overall", summary["overall"]), *summary["by_task"].items()]
+    rows = []
+    for group_name, group in groups:
+        for language in ("original", "clone"):
+            metrics = group[language]
+            rows.append(
+                {
+                    "group": group_name,
+                    "language": language,
+                    "pairs": metrics["num_pairs"],
+                    "accuracy": metrics["accuracy"],
+                    "pair_accuracy": metrics["pair_accuracy"],
+                    "mean_logit_difference": metrics["mean_logit_difference"],
+                    "clean_accuracy": metrics["clean_accuracy"],
+                    "corrupted_accuracy": metrics["corrupted_accuracy"],
+                    "joint_sanity_pairs": group["joint_sanity_pairs"],
+                }
+            )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    labels = [name for name, _ in groups]
+    positions = np.arange(len(labels))
+    width = 0.36
+    figure, axes = plt.subplots(1, 2, figsize=(15, 6), constrained_layout=True)
+    for offset, language in ((-width / 2, "original"), (width / 2, "clone")):
+        language_rows = [row for row in rows if row["language"] == language]
+        axes[0].bar(
+            positions + offset,
+            [row["accuracy"] for row in language_rows],
+            width,
+            label=language.title(),
+        )
+        axes[1].bar(
+            positions + offset,
+            [row["mean_logit_difference"] for row in language_rows],
+            width,
+            label=language.title(),
+        )
+    axes[0].set_title("Controlled SVA Accuracy")
+    axes[0].set_ylabel("Accuracy")
+    axes[0].set_ylim(0, 1)
+    axes[1].set_title("Mean Correct − Incorrect Logit Difference")
+    axes[1].set_ylabel("Mean logit difference")
+    axes[1].axhline(0.0, color="black", linewidth=1)
+    for axis in axes:
+        axis.set_xticks(positions, labels, rotation=20, ha="right")
+        axis.grid(axis="y", alpha=0.3)
+        axis.legend()
+
+    figure_path = output_dir / "sva_report.png"
+    figure.savefig(figure_path, dpi=180, bbox_inches="tight")
+    plt.close(figure)
+    table_path = output_dir / "sva_summary.csv"
+    _write_csv(table_path, rows)
+
+    overall = summary["overall"]
+    for language in ("original", "clone"):
+        metrics = overall[language]
+        print(
+            f"{language:8s} accuracy={metrics['accuracy']:.4f} | "
+            f"mean_LD={metrics['mean_logit_difference']:+.4f}"
+        )
+    print(f"Joint sanity pairs: {overall['joint_sanity_pairs']:,}")
+    print(f"Figure: {figure_path}")
+    print(f"Table: {table_path}")
+
+
+def plot_patching(
+    results_dir: Path,
+    output_dir: Path,
+    top_k: int,
+    language: str,
+    metric: str,
+) -> None:
     components = ("resid_post", "attn_out", "mlp_out", "head_out")
+    language_dir = results_dir / language
+    if not language_dir.is_dir():
+        raise FileNotFoundError(
+            f"Missing {language} patching results: {language_dir}"
+        )
     means = {
-        component: np.load(results_dir / f"{component}_mean.npy")
+        component: np.load(language_dir / f"{component}_{metric}_mean.npy")
         for component in components
     }
-    archive = np.load(results_dir / "per_example_scores.npz")
+    archive = np.load(language_dir / "per_example_scores.npz")
     relative_positions = archive["relative_positions"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -238,9 +321,11 @@ def plot_patching(results_dir: Path, output_dir: Path, top_k: int) -> None:
     }
     figure, axes = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
     for axis, component in zip(axes.flat, components):
-        values = means[component]
+        full_values = means[component]
+        values = full_values[:, -1] if component == "head_out" else full_values
         finite = np.abs(values[np.isfinite(values)])
-        limit = max(1.0, float(np.percentile(finite, 95))) if finite.size else 1.0
+        limit = float(np.percentile(finite, 95)) if finite.size else 1.0
+        limit = max(limit, 1e-6)
         image = axis.imshow(
             values,
             aspect="auto",
@@ -264,41 +349,57 @@ def plot_patching(results_dir: Path, output_dir: Path, top_k: int) -> None:
                 ).astype(int)
             )
             axis.set_xticks(ticks, relative_positions[ticks])
-        figure.colorbar(image, ax=axis, label="Mean patch score")
+        figure.colorbar(image, ax=axis, label=f"Mean {metric}")
 
-    figure_path = output_dir / "patching_report.png"
+    figure.suptitle(f"{language.title()} SVA Patching: {metric}")
+    figure_path = output_dir / f"patching_{language}_{metric}.png"
     figure.savefig(figure_path, dpi=180, bbox_inches="tight")
     plt.close(figure)
 
     sites = []
     for component, values in means.items():
-        for layer, row in enumerate(values):
-            for column, score in enumerate(row):
-                if np.isfinite(score):
-                    position = (
-                        column
-                        if component == "head_out"
-                        else int(relative_positions[column])
-                    )
-                    sites.append(
-                        {
-                            "component": component,
-                            "layer": layer,
-                            "position_or_head": position,
-                            "patch_score": float(score),
-                            "absolute_score": abs(float(score)),
-                        }
-                    )
+        if component == "head_out":
+            for layer in range(values.shape[0]):
+                for position_index, position in enumerate(relative_positions):
+                    for head in range(values.shape[2]):
+                        score = values[layer, position_index, head]
+                        if np.isfinite(score):
+                            sites.append(
+                                {
+                                    "component": component,
+                                    "layer": layer,
+                                    "relative_position": int(position),
+                                    "head": head,
+                                    metric: float(score),
+                                    "absolute_score": abs(float(score)),
+                                }
+                            )
+        else:
+            for layer, row in enumerate(values):
+                for position_index, score in enumerate(row):
+                    if np.isfinite(score):
+                        sites.append(
+                            {
+                                "component": component,
+                                "layer": layer,
+                                "relative_position": int(
+                                    relative_positions[position_index]
+                                ),
+                                "head": "",
+                                metric: float(score),
+                                "absolute_score": abs(float(score)),
+                            }
+                        )
     sites.sort(key=lambda row: row["absolute_score"], reverse=True)
-    table_path = output_dir / "patching_top_sites.csv"
+    table_path = output_dir / f"patching_top_sites_{language}_{metric}.csv"
     _write_csv(table_path, sites[:top_k])
 
     print("Top patching sites:")
     for row in sites[: min(10, top_k)]:
         print(
             f"  {row['component']:10s} layer={row['layer']:2d} "
-            f"position/head={row['position_or_head']:3d} "
-            f"score={row['patch_score']:+.4f}"
+            f"position={row['relative_position']:3d} "
+            f"head={str(row['head']):>2s} score={row[metric]:+.4f}"
         )
     print(f"Figure: {figure_path}")
     print(f"Table: {table_path}")
@@ -317,10 +418,20 @@ def parse_args() -> argparse.Namespace:
     blimp.add_argument("--results-dir", type=Path, required=True)
     blimp.add_argument("--output-dir", type=Path)
 
+    sva = subparsers.add_parser("sva")
+    sva.add_argument("--results-dir", type=Path, required=True)
+    sva.add_argument("--output-dir", type=Path)
+
     patching = subparsers.add_parser("patching")
     patching.add_argument("--results-dir", type=Path, required=True)
     patching.add_argument("--output-dir", type=Path)
     patching.add_argument("--top-k", type=int, default=50)
+    patching.add_argument(
+        "--language", choices=("original", "clone"), default="original"
+    )
+    patching.add_argument(
+        "--metric", choices=("delta_ld", "recovery"), default="recovery"
+    )
     return parser.parse_args()
 
 
@@ -337,11 +448,18 @@ def main() -> None:
             args.results_dir,
             args.output_dir or args.results_dir,
         )
+    elif args.report == "sva":
+        plot_sva(
+            args.results_dir,
+            args.output_dir or args.results_dir,
+        )
     else:
         plot_patching(
             args.results_dir,
             args.output_dir or args.results_dir,
             args.top_k,
+            args.language,
+            args.metric,
         )
 
 

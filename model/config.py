@@ -1,12 +1,10 @@
-"""Model configuration."""
+
 
 from dataclasses import dataclass
 
 
 @dataclass
 class GPTConfig:
-    """Configuration for the decoder-only GPT model."""
-
     vocab_size: int
     block_size: int = 256
     d_model: int = 256
