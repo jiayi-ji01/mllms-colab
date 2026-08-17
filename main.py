@@ -1,57 +1,11 @@
-"""Unified command-line entry point."""
+"""Backward-compatible entry point; prefer the installed ``mllms`` command."""
 
-from importlib import import_module
+from pathlib import Path
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-COMMANDS = {
-    ("data", "prepare"): "data_lib.prepare_tinystories",
-    ("data", "prepare-babylm"): "data_lib.prepare_babylm",
-    ("data", "tokenize"): "tokenizer.tokenization",
-    ("tokenizer", "train"): "tokenizer.train_tokenizer",
-    ("train",): "train",
-    ("blimp", "download"): "blimp.download_blimp",
-    ("blimp", "prepare"): "blimp.prepare_blimp",
-    ("blimp", "evaluate"): "blimp.evaluate_blimp",
-    ("analyze", "prepare-sva"): "analysis.prepare_sva_pairs",
-    ("analyze", "evaluate-sva"): "analysis.evaluate_sva",
-    ("analyze", "activation-patching"): "analysis.activation_patching",
-    ("plot",): "plots.reports",
-}
-
-HELP = """Usage: mllms COMMAND [ARGS]
-
-Commands:
-  data prepare                    Prepare fixed TinyStories splits
-  data prepare-babylm             Prepare official BabyLM 100M/dev/test
-  tokenizer train                 Train the SentencePiece BPE tokenizer
-  data tokenize                   Create uint16 token streams
-  train                           Train or resume the cloned-language GPT
-  blimp download                  Download BLiMP agreement data
-  blimp prepare                   Tokenize BLiMP pairs
-  blimp evaluate                  Evaluate a checkpoint on BLiMP
-  analyze prepare-sva             Build controlled CausalGym SVA pairs
-  analyze evaluate-sva            Evaluate SVA and select sanity pairs
-  analyze activation-patching     Patch all layer/token/head sites
-  plot training|blimp|sva|patching
-                                  Create figures and CSV summary tables
-"""
-
-
-def main() -> None:
-    args = sys.argv[1:]
-    if not args or args[0] in {"-h", "--help"}:
-        print(HELP)
-        return
-
-    for command, module_name in COMMANDS.items():
-        if tuple(args[: len(command)]) == command:
-            sys.argv = ["mllms " + " ".join(command), *args[len(command) :]]
-            import_module(module_name).main()
-            return
-
-    print(HELP, file=sys.stderr)
-    raise SystemExit(f"Unknown command: {' '.join(args[:2])}")
+from mllms.cli import main
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+run:
+  tokenizer: artifacts/babylm_tokenizer/tokenizer.model
+  data: outputs/causalgym_sva/sanity_pairs.jsonl
+  output_dir: outputs/causalgym_patching
+  device: auto
+  language: both
+  max_examples: 1000
+  example_batch_size: 8
+  intervention_batch_size: 64
+  max_positions: null
+  sanity_margin: 0.0
+  denominator_epsilon: 0.000001
