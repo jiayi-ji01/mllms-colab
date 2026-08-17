@@ -14,6 +14,7 @@ COMMANDS = {
     ("blimp", "prepare"): "blimp.prepare_blimp",
     ("blimp", "evaluate"): "blimp.evaluate_blimp",
     ("analyze", "prepare-sva"): "analysis.prepare_sva_pairs",
+    ("analyze", "evaluate-sva"): "analysis.evaluate_sva",
     ("analyze", "activation-patching"): "analysis.activation_patching",
     ("plot",): "plots.reports",
 }
@@ -29,9 +30,11 @@ Commands:
   blimp download                  Download BLiMP agreement data
   blimp prepare                   Tokenize BLiMP pairs
   blimp evaluate                  Evaluate a checkpoint on BLiMP
-  analyze prepare-sva             Build aligned SVA pairs for patching
-  analyze activation-patching     Run activation patching
-  plot training|blimp|patching    Create figures and CSV summary tables
+  analyze prepare-sva             Build controlled CausalGym SVA pairs
+  analyze evaluate-sva            Evaluate SVA and select sanity pairs
+  analyze activation-patching     Patch all layer/token/head sites
+  plot training|blimp|sva|patching
+                                  Create figures and CSV summary tables
 """
 
 
