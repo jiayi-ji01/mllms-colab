@@ -1,4 +1,3 @@
-"""GPT-2 style decoder-only Transformer."""
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -11,14 +10,12 @@ from model.config import GPTConfig
 
 
 class HookPoint(nn.Module):
-    """No-op module used to cache or replace an intermediate activation."""
-
+    # 可以用来保存、读取中间的activations
     def forward(self, activation: torch.Tensor) -> torch.Tensor:
         return activation
 
 
 class CausalSelfAttention(nn.Module):
-    """Multi-head self-attention with a causal mask."""
 
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
@@ -59,8 +56,9 @@ class CausalSelfAttention(nn.Module):
             dropout_p=self.dropout if self.training else 0.0,
             is_causal=True,
         )
-        # [batch, heads, sequence, head_dim], before the output projection.
+        # head-level activations
         attention = self.hook_head_out(attention)
+
         attention = attention.transpose(1, 2).contiguous().view(
             batch_size,
             sequence_length,
@@ -70,8 +68,6 @@ class CausalSelfAttention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    """GPT-2 feed-forward network."""
-
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         self.fc_in = nn.Linear(config.d_model, config.d_ff, bias=config.bias)
@@ -92,6 +88,7 @@ class TransformerBlock(nn.Module):
         self.attn = CausalSelfAttention(config)
         self.ln_2 = nn.LayerNorm(config.d_model)
         self.mlp = FeedForward(config)
+
         self.hook_attn_out = HookPoint()
         self.hook_mlp_out = HookPoint()
         self.hook_resid_post = HookPoint()
@@ -121,6 +118,7 @@ class GPT(nn.Module):
         self.apply(self._init_weights)
         self.lm_head.weight = self.token_embedding.weight
 
+    # 读取bloks里面的hookpoint
     def activation_points(self) -> dict[str, HookPoint]:
         """Return the named activation sites exposed by every layer."""
         points: dict[str, HookPoint] = {}
@@ -132,12 +130,12 @@ class GPT(nn.Module):
             points[f"{prefix}.head_out"] = block.attn.hook_head_out
         return points
 
+
     @contextmanager
     def hooks(
         self,
         hook_functions: dict[str, Callable[[torch.Tensor], torch.Tensor]],
     ) -> Iterator[None]:
-        """Temporarily transform activations at named hook points."""
         points = self.activation_points()
         unknown = set(hook_functions) - set(points)
         if unknown:
@@ -153,6 +151,7 @@ class GPT(nn.Module):
             ) -> torch.Tensor:
                 return function(output)
 
+            # 注册 forward hook
             handles.append(points[name].register_forward_hook(forward_hook))
         try:
             yield
@@ -160,12 +159,13 @@ class GPT(nn.Module):
             for handle in handles:
                 handle.remove()
 
+    #执行一次 forward，并把指定位置的 activation 保存下来。
     def run_with_cache(
         self,
         input_ids: torch.Tensor,
         names: set[str] | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Run the model and return detached activations from selected sites."""
+
         selected = names or set(self.activation_points())
         cache: dict[str, torch.Tensor] = {}
 
@@ -220,7 +220,6 @@ class GPT(nn.Module):
         temperature: float = 1.0,
         top_k: int | None = None,
     ) -> torch.Tensor:
-        """Autoregressively sample tokens from the model."""
         if max_new_tokens < 0:
             raise ValueError("max_new_tokens must be non-negative")
         if temperature <= 0:
