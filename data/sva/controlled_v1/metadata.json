@@ -1,0 +1,100 @@
+{
+  "dataset": "mllms_controlled_sva_v1",
+  "config": "configs/evaluation/sva.yaml",
+  "tokenizer": "output/assets/babylm_tokenizer/tokenizer.model",
+  "tokenizer_sha256": "759c9656481ecda9da571f7cb78970974b53f34e54b826b367eaafcd162d0ff3",
+  "seed": 42,
+  "conditions": [
+    "simple",
+    "pp_attractor",
+    "object_relative",
+    "subject_relative"
+  ],
+  "construction": "clean/corrupted prompts differ only in the number-inflected form of one subject lemma; correct/incorrect verbs are one token",
+  "relation_label": "clean_attractor_relation describes the clean prompt only; flipping the subject reverses matched/mismatched status in the corrupted prompt",
+  "splits": {
+    "dev": {
+      "num_pairs": 400,
+      "task_counts": {
+        "subject_relative": 100,
+        "object_relative": 100,
+        "pp_attractor": 100,
+        "simple": 100
+      },
+      "lexicon": {
+        "nouns": [
+          "driver",
+          "engineer",
+          "leader",
+          "sailor",
+          "student",
+          "visitor"
+        ],
+        "main_verbs": [
+          "leave",
+          "sit",
+          "talk",
+          "walk"
+        ],
+        "past_verbs": [
+          "helped",
+          "trusted",
+          "visited"
+        ]
+      }
+    },
+    "test": {
+      "num_pairs": 3200,
+      "task_counts": {
+        "subject_relative": 800,
+        "pp_attractor": 800,
+        "simple": 800,
+        "object_relative": 800
+      },
+      "lexicon": {
+        "nouns": [
+          "actor",
+          "artist",
+          "author",
+          "banker",
+          "director",
+          "doctor",
+          "farmer",
+          "guard",
+          "judge",
+          "lawyer",
+          "officer",
+          "player",
+          "soldier",
+          "teacher",
+          "tourist",
+          "waiter",
+          "worker",
+          "writer"
+        ],
+        "main_verbs": [
+          "arrive",
+          "drive",
+          "play",
+          "return",
+          "run",
+          "speak",
+          "stand",
+          "travel",
+          "work",
+          "write"
+        ],
+        "past_verbs": [
+          "called",
+          "followed",
+          "hired",
+          "invited",
+          "met",
+          "noticed",
+          "praised",
+          "watched"
+        ]
+      }
+    }
+  }
+}

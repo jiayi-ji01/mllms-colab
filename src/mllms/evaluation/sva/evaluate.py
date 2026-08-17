@@ -132,7 +132,9 @@ def main() -> None:
     if mapper.model_vocab_size != model_config.vocab_size:
         raise ValueError("checkpoint and tokenizer vocabulary sizes differ")
 
-    records = read_pairs(args.data, args.max_pairs)
+    # controlled_v1 stores canonical text as well as its original token IDs.
+    # Re-encode here so the same fixed pairs remain valid for a new tokenizer.
+    records = read_pairs(args.data, args.max_pairs, tokenizer=tokenizer)
     language_scores = {}
     rejected = []
     for language, language_id in LANGUAGES.items():

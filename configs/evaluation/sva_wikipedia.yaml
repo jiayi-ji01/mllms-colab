@@ -1,0 +1,9 @@
+evaluate:
+  tokenizer: artifacts/wikipedia_tokenizer/tokenizer.model
+  data: data/sva/controlled_v1/test.jsonl
+  output_dir: outputs/evaluation/wikipedia_sva
+  device: auto
+  batch_size: 64
+  max_pairs: null
+  sanity_margin: 0.0
+  min_sanity_pairs: 500

@@ -134,7 +134,7 @@ def main() -> None:
     if mapper.model_vocab_size != model_config.vocab_size:
         raise ValueError("checkpoint and tokenizer vocabulary sizes differ")
 
-    records = read_pairs(args.data)
+    records = read_pairs(args.data, tokenizer=tokenizer)
     baseline_scores = {}
     baseline_rejected = []
     for language, language_id in LANGUAGES.items():

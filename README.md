@@ -1,375 +1,212 @@
-# MLLMs: Original / Cloned-Language GPT
+# MLLMs: Wikipedia + Cloned-Language GPT
 
-本项目从零训练 GPT-2 style decoder-only Transformer，比较 Original English 与
-Cloned Language 的 Subject–Verb Agreement（SVA）行为，并通过 activation patching
-研究两种 token space 是否使用相似的内部机制。
-
-实验优先级是：
+This repository trains one 12-layer decoder-only Transformer on English Wikipedia
+in balanced original/clone token spaces, evaluates subject–verb agreement (SVA) on
+the fixed project-owned controlled suite, and prepares sanity pairs for later
+activation patching.
 
 ```text
-Pretraining sanity
-  → SVA sanity
-  → causal component localization
-  → original/clone circuit comparison
+English Wikipedia pretraining
+  → controlled SVA evaluation at multiple checkpoints
+  → joint original/clone sanity-pair selection
+  → activation patching
 ```
 
-代码采用 `src/` layout。训练、linguistic evaluation、interpretability 和
-visualization 相互分离；`mllms` 是唯一的用户命令入口。
+The controlled SVA suite is evaluation-only and is never mixed into pretraining.
+TinyStories and BabyLM implementations/configs remain as historical references, but
+the active experiment is `gpt12_wikipedia_clone`.
 
 ## Repository structure
 
 ```text
-.
-├── configs/
-│   ├── experiments/              # model + data + training + runtime
-│   ├── evaluation/               # BLiMP / controlled SVA defaults
-│   └── interpretability/         # activation-patching defaults
-├── src/mllms/
-│   ├── cli.py                    # unified command router
-│   ├── config.py                 # validated YAML loading
-│   ├── runtime.py                # device, precision, autocast
-│   ├── model/
-│   │   ├── config.py             # GPTConfig
-│   │   ├── components.py         # attention, MLP, block, HookPoint
-│   │   ├── transformer.py        # GPT, embeddings, final norm, LM head
-│   │   └── loading.py            # inference checkpoint loading
-│   ├── data/
-│   │   ├── babylm.py
-│   │   ├── tinystories.py
-│   │   ├── cloned_language.py    # token-ID mapping only
-│   │   └── token_stream.py       # memmap loading and batch construction
-│   ├── tokenizer/
-│   │   ├── sentencepiece.py
-│   │   ├── train.py
-│   │   └── tokenize.py
-│   ├── training/
-│   │   ├── config.py
-│   │   ├── checkpoint.py
-│   │   ├── engine.py
-│   │   └── cli.py
-│   ├── evaluation/
-│   │   ├── language_model.py
-│   │   ├── sanity.py
-│   │   ├── blimp/
-│   │   └── sva/
-│   ├── interpretability/
-│   │   └── activation_patching/
-│   │       ├── metrics.py
-│   │       ├── interventions.py
-│   │       ├── results.py
-│   │       └── runner.py
-│   └── visualization/            # reads saved results; no model execution
-├── scripts/                      # environment and cluster shell helpers
-├── cluster/train.sbatch
-├── tests/
-├── book/                         # historical BabyLM result report
-└── main.py                       # compatibility launcher
+configs/
+  experiments/gpt12_wikipedia_clone.yaml
+  evaluation/sva_wikipedia.yaml
+  interpretability/activation_patching_wikipedia.yaml
+data/sva/controlled_v1/              # versioned canonical controlled benchmark
+src/mllms/
+  data/wikipedia.py                  # download, deterministic article split
+  data/cloned_language.py            # original/clone ID mapping
+  tokenizer/                         # SentencePiece training and token streams
+  model/                             # unchanged GPT model and hook points
+  training/                          # training, checkpointing, exact resume
+  evaluation/sva/                    # controlled evaluation and sanity selection
+  interpretability/activation_patching/
+  visualization/                    # result-only plots
+scripts/setup_cluster_env.sh
+scripts/train_cluster.sh
+cluster/train.sbatch
+tests/
 ```
 
-Generated data, tokenizer files, checkpoints and reports are excluded from Git.
+Generated Wikipedia text/token streams, tokenizer models, outputs, logs and model
+checkpoints are ignored by Git. `data/sva/controlled_v1/` is intentionally tracked.
+Its canonical prompts are re-tokenized by the evaluator with the tokenizer supplied
+on the command line, so its older stored token IDs cannot silently contaminate a
+Wikipedia-tokenizer evaluation.
 
-## Installation
+## Environment
 
 Python 3.10 or newer is required.
 
 ```bash
-python3 -m venv .venv
+bash scripts/setup_cluster_env.sh
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install --no-deps -e .
 mllms --help
 ```
 
-On a managed GPU cluster, install the PyTorch/CUDA build recommended by the
-administrator before installing the remaining requirements. The helper performs the
-same setup and prints CUDA availability:
+On a managed cluster, load the site-recommended Python/CUDA module first if needed.
+The setup script creates `.venv`, installs `requirements.txt`, installs this project
+editable, and reports whether PyTorch can see CUDA.
+
+## Wikipedia data and tokenizer
+
+The preparation command streams the pinned `wikimedia/wikipedia` English
+`20231101.en` snapshot. It writes whole, hash-disjoint articles until it reaches
+100M train words, 1M validation words and 1M test words. A manifest records the
+resolved dataset revision, license, seed and split statistics.
 
 ```bash
-bash scripts/setup_cluster_env.sh
-```
+mllms data prepare-wikipedia --output-dir data/wikipedia/raw
 
-## Configuration
-
-Training experiments have one canonical YAML each:
-
-- `configs/experiments/gpt12_babylm_clone.yaml`
-- `configs/experiments/gpt12_tinystories_clone.yaml`
-
-Each file contains the complete model, data, optimizer, schedule, seed and output
-configuration for that experiment. Evaluation and patching defaults live in:
-
-- `configs/evaluation/blimp.yaml`
-- `configs/evaluation/sva.yaml`
-- `configs/interpretability/activation_patching.yaml`
-
-CLI flags override YAML values. Model/training parameters are not copied into the
-evaluation configs.
-
-## Data preparation
-
-### BabyLM
-
-```bash
-mllms data prepare-babylm --output-dir data/babylm/raw
-```
-
-This downloads the pinned official cleaned BabyLM 100M train corpus and official
-dev/test splits. A manifest records the resolved dataset revision and split counts.
-
-### TinyStories
-
-```bash
-mllms data prepare --output-dir data/raw
-```
-
-The preparation step uses a fixed revision, seed and disjoint train/validation/test
-selection.
-
-## Tokenizer
-
-BabyLM SentencePiece BPE:
-
-```bash
 mllms tokenizer train \
-  --input data/babylm/raw/train.txt \
-  --model-prefix artifacts/babylm_tokenizer/tokenizer \
+  --input data/wikipedia/raw/train.txt \
+  --model-prefix artifacts/wikipedia_tokenizer/tokenizer \
   --vocab-size 16000 \
   --input-sentence-size 5000000
 
 mllms data tokenize \
-  --input-dir data/babylm/raw \
-  --output-dir data/babylm/processed \
-  --tokenizer artifacts/babylm_tokenizer/tokenizer.model \
+  --input-dir data/wikipedia/raw \
+  --output-dir data/wikipedia/processed \
+  --tokenizer artifacts/wikipedia_tokenizer/tokenizer.model \
   --no-train-token-limit
 ```
 
-TinyStories:
+The SentencePiece BPE settings, vocabulary size, original/clone mapping and batch
+construction are unchanged from the BabyLM baseline.
+
+## Training and resume
 
 ```bash
-mllms tokenizer train
-mllms data tokenize --target-train-tokens 100000000
+mllms train --config configs/experiments/gpt12_wikipedia_clone.yaml
 ```
 
-Raw preprocessing, tokenizer training, tokenization, dataset loading, cloned mapping
-and batch construction are separate modules.
+The model/optimizer/schedule/batch/context parameters match
+`gpt12_babylm_clone`; only dataset/tokenizer/output paths and the archival interval
+are experiment-specific. Checkpoints are written atomically as:
 
-## Pretraining
-
-BabyLM:
-
-```bash
-mllms train --config configs/experiments/gpt12_babylm_clone.yaml
+```text
+outputs/runs/gpt12_wikipedia_clone/
+  resolved_config.json
+  train_log.jsonl
+  checkpoints/step_005000.pt
+  checkpoints/step_010000.pt
+  ...
+  best.pt
+  last.pt
 ```
 
-TinyStories:
-
-```bash
-mllms train --config configs/experiments/gpt12_tinystories_clone.yaml
-```
-
-Resume explicitly:
+Each checkpoint includes model, optimizer, scheduler and scaler state; global step;
+nominal epoch; latest/best validation loss; token counters; complete config; and
+Python, NumPy, PyTorch and sampling-generator RNG states.
 
 ```bash
 mllms train \
-  --config configs/experiments/gpt12_babylm_clone.yaml \
-  --resume outputs/runs/gpt12_babylm_clone/latest.pt
+  --config configs/experiments/gpt12_wikipedia_clone.yaml \
+  --resume outputs/runs/gpt12_wikipedia_clone/checkpoints/step_010000.pt
 ```
 
-The checkpoint contains model, optimizer, scheduler, scaler, counters, training
-configuration and RNG states. Existing checkpoints remain loadable because model
-attribute names, state-dict keys and checkpoint schema are unchanged.
+`scripts/train_cluster.sh` automatically resumes the newest numbered checkpoint and
+skips a run that already has `last.pt`.
 
-Run pretraining sanity checks before linguistic evaluation:
+## Controlled SVA
+
+Validate that all fixed prompts can be encoded by the Wikipedia tokenizer:
 
 ```bash
-mllms analyze sanity-check \
-  --checkpoint outputs/runs/gpt12_babylm_clone/best.pt \
+python -c 'from pathlib import Path; from mllms.tokenizer.sentencepiece import load_tokenizer; from mllms.evaluation.sva.pairs import read_pairs; t=load_tokenizer(Path("artifacts/wikipedia_tokenizer/tokenizer.model")); p=read_pairs(Path("data/sva/controlled_v1/test.jsonl"), tokenizer=t); print(f"validated {len(p)} controlled SVA pairs")'
+```
+
+Evaluate any final or intermediate checkpoint:
+
+```bash
+CHECKPOINT=outputs/runs/gpt12_wikipedia_clone/last.pt
+STEP_NAME=$(basename "${CHECKPOINT}" .pt)
+mllms analyze evaluate-sva \
+  --config configs/evaluation/sva_wikipedia.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --output-dir "outputs/evaluation/wikipedia_sva/${STEP_NAME}" \
   --device cuda
-
-mllms plot training --run-dir outputs/runs/gpt12_babylm_clone
 ```
 
-## BLiMP SVA evaluation
+The evaluator reports accuracy, pair accuracy and oriented logit difference for the
+original and clone languages across `simple`, `pp_attractor`, `object_relative` and
+`subject_relative`. Pairs that pass the joint clean/corrupted criterion in both
+languages are written to `sanity_pairs.jsonl`.
 
 ```bash
-RUN_DIR=outputs/runs/gpt12_babylm_clone
-TOKENIZER=artifacts/babylm_tokenizer/tokenizer.model
-
-mllms blimp download
-mllms blimp prepare \
-  --config configs/evaluation/blimp.yaml \
-  --checkpoint "$RUN_DIR/best.pt" \
-  --tokenizer "$TOKENIZER" \
-  --output data/blimp/processed/babylm_agreement.jsonl
-mllms blimp evaluate \
-  --config configs/evaluation/blimp.yaml \
-  --checkpoint "$RUN_DIR/best.pt" \
-  --tokenizer "$TOKENIZER" \
-  --data data/blimp/processed/babylm_agreement.jsonl \
-  --scoring verb-logit \
-  --device cuda \
-  --output-dir "$RUN_DIR/blimp_sva_logit"
-mllms plot blimp --results-dir "$RUN_DIR/blimp_sva_logit"
+mllms plot sva \
+  --results-dir "outputs/evaluation/wikipedia_sva/${STEP_NAME}"
 ```
 
-`verb-logit` only evaluates pairs with an identical prefix and one-token verb
-alternatives. `conditional-logprob` remains available for the full compatible set.
+## Activation-patching preparation
 
-## Controlled SVA evaluation
-
-Build the project-owned Marvin--Linzen-style suite. Its dev/test vocabularies are
-disjoint, answer verbs are single SentencePiece tokens, and every clean/corrupted
-prompt differs only in the number-inflected form of one subject lemma:
-
-```bash
-mllms analyze build-controlled-sva \
-  --config configs/evaluation/sva.yaml \
-  --tokenizer "$TOKENIZER" \
-  --output-dir data/sva/controlled_v1
-
-mllms analyze evaluate-sva \
-  --config configs/evaluation/sva.yaml \
-  --checkpoint "$RUN_DIR/best.pt" \
-  --tokenizer "$TOKENIZER" \
-  --data data/sva/controlled_v1/test.jsonl \
-  --device cuda \
-  --output-dir "$RUN_DIR/controlled_sva"
-```
-
-The four controlled conditions are `simple`, `pp_attractor`, `object_relative`
-and `subject_relative`. The clean prompt's matched and mismatched attractor
-conditions are reported separately; changing subject number reverses this relation
-in the corrupted prompt. `metadata.json` pins the tokenizer hash, seed, lexical
-split and condition counts.
-
-The CausalGym-derived suite remains available for comparison and causal-method
-benchmarking:
-
-```bash
-mllms analyze prepare-sva \
-  --config configs/evaluation/sva.yaml \
-  --tokenizer "$TOKENIZER" \
-  --output data/causalgym/sva_pairs.jsonl
-
-mllms analyze evaluate-sva \
-  --config configs/evaluation/sva.yaml \
-  --checkpoint "$RUN_DIR/best.pt" \
-  --tokenizer "$TOKENIZER" \
-  --data data/causalgym/sva_pairs.jsonl \
-  --device cuda \
-  --output-dir "$RUN_DIR/causalgym_sva"
-
-mllms plot sva --results-dir "$RUN_DIR/causalgym_sva"
-```
-
-The evaluator records accuracy, pair accuracy and correctly oriented logit
-difference separately for original and clone. Only pairs passing the joint sanity
-criterion are written to `sanity_pairs.jsonl`.
-
-## Activation patching
-
-Only proceed after inspecting SVA performance and the number/distribution of joint
-sanity pairs.
+Use the checkpoint-specific sanity set. Patching is deliberately not part of the
+training loop.
 
 ```bash
 mllms analyze activation-patching \
-  --config configs/interpretability/activation_patching.yaml \
-  --checkpoint "$RUN_DIR/best.pt" \
-  --tokenizer "$TOKENIZER" \
-  --data "$RUN_DIR/causalgym_sva/sanity_pairs.jsonl" \
-  --language both \
-  --device cuda \
-  --output-dir "$RUN_DIR/causalgym_patching"
+  --config configs/interpretability/activation_patching_wikipedia.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --data "outputs/evaluation/wikipedia_sva/${STEP_NAME}/sanity_pairs.jsonl" \
+  --output-dir "outputs/interpretability/wikipedia_patching/${STEP_NAME}" \
+  --device cuda
 ```
 
-The runner patches these stable activation names:
-
-```text
-blocks.{layer}.resid_post
-blocks.{layer}.attn_out
-blocks.{layer}.mlp_out
-blocks.{layer}.head_out
-```
-
-Metrics are saved as both raw `delta_ld` and normalized `recovery`. Plotting is a
-separate result-only step:
+Stable hook locations remain visible as `blocks.{layer}.resid_post`,
+`blocks.{layer}.attn_out`, `blocks.{layer}.mlp_out` and
+`blocks.{layer}.head_out`. Plotting only reads saved results:
 
 ```bash
 mllms plot patching \
-  --results-dir "$RUN_DIR/causalgym_patching" \
+  --results-dir "outputs/interpretability/wikipedia_patching/${STEP_NAME}" \
   --language original \
   --metric recovery
 ```
 
-## Output layout
-
-```text
-outputs/runs/EXPERIMENT/
-├── resolved_config.json
-├── train_log.jsonl
-├── latest.pt
-├── best.pt
-├── final.pt
-├── sanity_check_lm/
-├── blimp_sva_logit/
-├── causalgym_sva/
-└── causalgym_patching/
-    ├── metadata.json
-    ├── original/
-    │   ├── per_example_scores.npz
-    │   ├── mean_scores.csv
-    │   └── *_mean.npy / *_count.npy
-    └── clone/
-```
-
-Historical downloaded results remain under ignored `output/`; they are not used as
-new defaults.
-
 ## Cluster execution
 
-Submit the generic single-GPU Slurm template from the repository root:
+After preparing the environment and data, submit from the repository root:
 
 ```bash
+mkdir -p logs
 sbatch --partition=YOUR_GPU_PARTITION cluster/train.sbatch
 ```
 
-Override experiment and storage location without editing the script:
+The template intentionally leaves the institution-specific partition/account to the
+submission command. Override storage or config without editing it:
 
 ```bash
+mkdir -p logs
 sbatch \
   --partition=YOUR_GPU_PARTITION \
-  --export=ALL,CONFIG=configs/experiments/gpt12_tinystories_clone.yaml,RUN_DIR=/shared/USER/mllms/tinystories \
+  --export=ALL,CONFIG=configs/experiments/gpt12_wikipedia_clone.yaml,RUN_DIR=/shared/USER/mllms/gpt12_wikipedia_clone \
   cluster/train.sbatch
 ```
 
-On a non-Slurm GPU server:
-
-```bash
-bash scripts/train_cluster.sh \
-  configs/experiments/gpt12_babylm_clone.yaml \
-  outputs/runs/gpt12_babylm_clone
-```
-
-The helper resumes `latest.pt` automatically and skips a completed `final.pt`.
-
 ## Tests
-
-The test suite protects cloned mapping, checkpoint state-dict compatibility, SVA
-metric direction and the core patching recovery invariant:
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-## Important entry points
+## Main entry points
 
-- Model configuration: `src/mllms/model/config.py`
-- Transformer components and hooks: `src/mllms/model/components.py`
-- GPT forward pass: `src/mllms/model/transformer.py`
-- Cloned language mapping: `src/mllms/data/cloned_language.py`
-- Training loop: `src/mllms/training/engine.py`
-- SVA scoring: `src/mllms/evaluation/sva/scoring.py`
-- Patching operations: `src/mllms/interpretability/activation_patching/interventions.py`
-- Patching metrics: `src/mllms/interpretability/activation_patching/metrics.py`
+- Wikipedia preparation: `src/mllms/data/wikipedia.py`
+- Tokenizer/tokenization: `src/mllms/tokenizer/train.py`, `tokenize.py`
+- Model and hook points: `src/mllms/model/transformer.py`, `components.py`
+- Training: `src/mllms/training/engine.py`
+- Checkpoint/resume: `src/mllms/training/checkpoint.py`
+- Controlled SVA: `src/mllms/evaluation/sva/controlled.py`, `evaluate.py`
+- Patching: `src/mllms/interpretability/activation_patching/runner.py`
 - Visualization: `src/mllms/visualization/`
