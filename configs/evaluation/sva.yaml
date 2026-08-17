@@ -1,0 +1,25 @@
+prepare:
+  tokenizer: artifacts/babylm_tokenizer/tokenizer.model
+  output: data/causalgym/sva_pairs.jsonl
+  num_pairs: 1000
+  seed: 42
+  splits: train,dev,test
+  revision: 95349c3a5e53e2506e8b212482ea6dd784978156
+
+controlled:
+  tokenizer: artifacts/babylm_tokenizer/tokenizer.model
+  output_dir: data/sva/controlled_v1
+  dev_pairs_per_condition: 100
+  test_pairs_per_condition: 800
+  lexical_dev_fraction: 0.25
+  seed: 42
+
+evaluate:
+  tokenizer: artifacts/babylm_tokenizer/tokenizer.model
+  data: data/causalgym/sva_pairs.jsonl
+  output_dir: outputs/causalgym_sva
+  device: auto
+  batch_size: 64
+  max_pairs: null
+  sanity_margin: 0.0
+  min_sanity_pairs: 500

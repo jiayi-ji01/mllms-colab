@@ -1,1 +1,0 @@
-"""GPT model and configuration."""

@@ -6,6 +6,7 @@
 # Python caches and local environments
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .venv/
@@ -13,10 +14,13 @@ venv/
 
 # Local datasets, tokenizer artifacts, and training outputs
 data/
+!src/mllms/data/
+!src/mllms/data/**
 artifacts/
 outputs/
 checkpoints/
 wandb/
+slurm-*.out
 
 # Large generated files wherever they are placed
 *.bin

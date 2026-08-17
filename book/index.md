@@ -30,7 +30,7 @@
 - [预训练](training.md)：配置、loss、PPL、学习率和梯度。
 - [SVA 评估](sva.md)：严格 verb-logit 与 conditional-logprob 结果。
 - [对比与质疑](comparison.md)：与 TinyStories 对比，并说明结果不能证明什么。
-- [构建与更新](reproduce.md)：本地或 Colab 中打开这本 Jupyter Book。
+- [构建与更新](reproduce.md)：在本地或远程服务器上构建这本 Jupyter Book。
 
 ## 结果边界
 

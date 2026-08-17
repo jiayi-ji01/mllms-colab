@@ -1,4 +1,5 @@
-# PyTorch is provided by the Colab CUDA runtime; do not replace it here.
+# On managed clusters, install a site-specific CUDA build first if required.
+torch>=2.2
 datasets==5.0.1
 huggingface_hub>=0.27
 matplotlib==3.11.1

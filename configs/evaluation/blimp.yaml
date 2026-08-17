@@ -1,0 +1,13 @@
+prepare:
+  input: data/blimp/raw/agreement.jsonl
+  output: data/blimp/processed/agreement.jsonl
+  tokenizer: artifacts/tokenizer/tokenizer.model
+  examples: 5
+
+evaluate:
+  data: data/blimp/processed/agreement.jsonl
+  tokenizer: artifacts/tokenizer/tokenizer.model
+  output_dir: outputs/blimp
+  batch_size: 64
+  scoring: conditional-logprob
+  device: auto

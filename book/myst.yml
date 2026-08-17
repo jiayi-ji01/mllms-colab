@@ -4,7 +4,6 @@ project:
   id: mllms-babylm-results
   title: BabyLM Original + Cloned Language 实验报告
   description: GPT-2 style decoder-only Transformer 的预训练与 SVA 结果
-  github: jiayi-ji01/mllms-colab
   toc:
     - file: index.md
     - file: training.md
