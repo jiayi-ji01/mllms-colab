@@ -22,7 +22,7 @@ class TrainingConfigTest(unittest.TestCase):
         unchanged = (
             "vocab_size", "block_size", "d_model", "n_heads", "n_layers",
             "d_ff", "dropout", "bias", "micro_batch_size",
-            "gradient_accumulation_steps", "target_epochs", "learning_rate",
+            "gradient_accumulation_steps", "learning_rate",
             "min_learning_rate", "weight_decay", "beta1", "beta2",
             "warmup_ratio", "warmup_steps", "grad_clip", "log_interval",
             "eval_interval", "eval_batches", "early_stopping_patience",
@@ -30,3 +30,5 @@ class TrainingConfigTest(unittest.TestCase):
         )
         for name in unchanged:
             self.assertEqual(getattr(wikipedia, name), getattr(babylm, name), name)
+        self.assertEqual(babylm.target_epochs, 2.0)
+        self.assertEqual(wikipedia.target_epochs, 4.0)

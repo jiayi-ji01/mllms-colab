@@ -199,9 +199,13 @@ def main() -> None:
         "max_pairs": args.max_pairs,
         "random_seed": None,
         "selection_order": "input order; evaluation performs no random sampling",
-        "reported_metric": "LD = logit(correct) - logit(incorrect)",
+        "reported_metric": (
+            "LD = log P(clean answer sequence) - "
+            "log P(corrupted answer sequence)"
+        ),
         "patching_ld_direction": (
-            "logit(clean_answer) - logit(corrupted_answer) for both runs"
+            "sequence log-probability(clean_answer) - "
+            "sequence log-probability(corrupted_answer) for both runs"
         ),
         "accuracy_definition": "accuracy over both clean and corrupted prompts",
         "pair_accuracy_definition": "both counterfactual prompts are correct",

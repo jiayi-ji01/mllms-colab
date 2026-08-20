@@ -56,8 +56,8 @@ def plot_sva(results_dir: Path, output_dir: Path) -> None:
     axes[0].set_title("Controlled SVA Accuracy")
     axes[0].set_ylabel("Accuracy")
     axes[0].set_ylim(0, 1)
-    axes[1].set_title("Mean Correct − Incorrect Logit Difference")
-    axes[1].set_ylabel("Mean logit difference")
+    axes[1].set_title("Mean Correct − Incorrect Sequence Log-Probability")
+    axes[1].set_ylabel("Mean sequence log-probability difference")
     axes[1].axhline(0.0, color="black", linewidth=1)
     for axis in axes:
         axis.set_xticks(positions, labels, rotation=20, ha="right")

@@ -1,6 +1,6 @@
 # Wikipedia-only counterpart of gpt12_babylm_clone. Architecture and optimizer
-# settings are unchanged; only dataset/tokenizer/output paths and archival
-# checkpoint cadence differ.
+# settings are unchanged. The run uses four nominal epochs so each half of the
+# balanced original/clone mixture sees about two dataset epochs on average.
 model:
   vocab_size: 16000
   n_layers: 12
@@ -20,7 +20,7 @@ training:
   micro_batch_size: 4
   gradient_accumulation_steps: 8
   target_seen_tokens: null
-  target_epochs: 2.0
+  target_epochs: 4.0
   max_steps: null
   learning_rate: 0.0003
   min_learning_rate: 0.00003
