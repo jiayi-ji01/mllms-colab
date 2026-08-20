@@ -28,6 +28,35 @@ def final_logit_difference(
     )
 
 
+def answer_log_probability(
+    model,
+    prompts: torch.Tensor,
+    answer_ids: torch.Tensor,
+) -> torch.Tensor:
+    """Return the summed autoregressive log probability of each answer."""
+    if answer_ids.ndim != 2 or answer_ids.size(1) == 0:
+        raise ValueError("answer_ids must have shape [batch, nonzero answer length]")
+    model_input = torch.cat((prompts, answer_ids[:, :-1]), dim=1)
+    logits, _ = model(model_input)
+    start = prompts.size(1) - 1
+    answer_logits = logits[:, start : start + answer_ids.size(1)]
+    return answer_logits.log_softmax(dim=-1).gather(
+        -1, answer_ids.unsqueeze(-1)
+    ).squeeze(-1).sum(dim=-1)
+
+
+def sequence_log_probability_difference(
+    model,
+    prompts: torch.Tensor,
+    clean_answer_ids: torch.Tensor,
+    corrupted_answer_ids: torch.Tensor,
+) -> torch.Tensor:
+    """Return log P(clean answer | prompt) - log P(corrupted answer | prompt)."""
+    return answer_log_probability(
+        model, prompts, clean_answer_ids
+    ) - answer_log_probability(model, prompts, corrupted_answer_ids)
+
+
 @torch.inference_mode()
 def score_language_pairs(
     model,
@@ -50,13 +79,18 @@ def score_language_pairs(
                 {"sample_id": str(record.get("sample_id")), "reason": str(error)}
             )
 
-    grouped: dict[int, list[dict]] = defaultdict(list)
+    grouped: dict[tuple[int, int, int, int], list[dict]] = defaultdict(list)
     for pair in mapped_pairs:
-        grouped[len(pair["clean_ids"])].append(pair)
+        grouped[(
+            len(pair["clean_ids"]),
+            len(pair["corrupted_ids"]),
+            len(pair["clean_answer_ids"]),
+            len(pair["corrupted_answer_ids"]),
+        )].append(pair)
 
     scores: dict[str, dict] = {}
-    for sequence_length in sorted(grouped):
-        group = grouped[sequence_length]
+    for group_key in sorted(grouped):
+        group = grouped[group_key]
         for start in range(0, len(group), batch_size):
             batch = group[start : start + batch_size]
             clean = torch.tensor(
@@ -70,18 +104,16 @@ def score_language_pairs(
                 device=device,
             )
             clean_answers = torch.tensor(
-                [pair["clean_answer_id"] for pair in batch], device=device
+                [pair["clean_answer_ids"] for pair in batch], device=device
             )
             corrupted_answers = torch.tensor(
-                [pair["corrupted_answer_id"] for pair in batch], device=device
+                [pair["corrupted_answer_ids"] for pair in batch], device=device
             )
-            clean_logits, _ = model(clean)
-            corrupted_logits, _ = model(corrupted)
-            clean_ld = final_logit_difference(
-                clean_logits, clean_answers, corrupted_answers
+            clean_ld = sequence_log_probability_difference(
+                model, clean, clean_answers, corrupted_answers
             ).cpu()
-            corrupted_ld = final_logit_difference(
-                corrupted_logits, clean_answers, corrupted_answers
+            corrupted_ld = sequence_log_probability_difference(
+                model, corrupted, clean_answers, corrupted_answers
             ).cpu()
 
             for pair, clean_value, corrupted_value in zip(

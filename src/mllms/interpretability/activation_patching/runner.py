@@ -72,6 +72,12 @@ def _select_balanced_records(
     sanity_rejected = []
     for record in records:
         sample_id = str(record["sample_id"])
+        if len(record["clean_input_ids"]) != len(record["corrupted_input_ids"]):
+            sanity_rejected.append({
+                "sample_id": sample_id,
+                "reason": "activation patching requires equal prompt token lengths",
+            })
+            continue
         if any(sample_id not in baseline_scores[name] for name in LANGUAGES):
             continue
         scores = {name: baseline_scores[name][sample_id] for name in LANGUAGES}
@@ -203,7 +209,10 @@ def main() -> None:
         "sanity_definition": (
             "clean_ld > margin and corrupted_ld < -margin in both languages"
         ),
-        "ld": "logit(clean_answer) - logit(corrupted_answer)",
+        "ld": (
+            "log P(clean answer sequence) - "
+            "log P(corrupted answer sequence)"
+        ),
         "delta_ld": "LD_patched - LD_corrupted",
         "recovery": (
             "(LD_patched - LD_corrupted) / (LD_clean - LD_corrupted)"
@@ -224,14 +233,18 @@ def main() -> None:
             )
             for record in accepted_records
         ]
-        grouped: dict[int, list[dict]] = defaultdict(list)
+        grouped: dict[tuple[int, int, int], list[dict]] = defaultdict(list)
         for example in mapped:
-            grouped[len(example["clean_ids"])].append(example)
+            grouped[(
+                len(example["clean_ids"]),
+                len(example["clean_answer_ids"]),
+                len(example["corrupted_answer_ids"]),
+            )].append(example)
 
         results = []
         completed = 0
-        for sequence_length in sorted(grouped):
-            group = grouped[sequence_length]
+        for group_key in sorted(grouped):
+            group = grouped[group_key]
             for start in range(0, len(group), args.example_batch_size):
                 batch = group[start : start + args.example_batch_size]
                 results.extend(
@@ -246,7 +259,7 @@ def main() -> None:
                 completed += len(batch)
                 print(
                     f"{language:8s} | {completed:4d}/{len(mapped)} pairs | "
-                    f"sequence length {sequence_length}"
+                    f"prompt/answer lengths {group_key}"
                 )
 
         by_id = {result["sample_id"]: result for result in results}

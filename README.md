@@ -91,9 +91,11 @@ construction are unchanged from the BabyLM baseline.
 mllms train --config configs/experiments/gpt12_wikipedia_clone.yaml
 ```
 
-The model/optimizer/schedule/batch/context parameters match
-`gpt12_babylm_clone`; only dataset/tokenizer/output paths and the archival interval
-are experiment-specific. Checkpoints are written atomically as:
+The model, optimizer, batch and context parameters match
+`gpt12_babylm_clone`. The Wikipedia run uses four nominal epochs: with the balanced
+`p_clone: 0.5` mixture, the original and clone token spaces each receive about two
+dataset epochs. Dataset/tokenizer/output paths and the archival interval are also
+experiment-specific. Checkpoints are written atomically as:
 
 ```text
 outputs/runs/gpt12_wikipedia_clone/
@@ -139,10 +141,12 @@ mllms analyze evaluate-sva \
   --device cuda
 ```
 
-The evaluator reports accuracy, pair accuracy and oriented logit difference for the
-original and clone languages across `simple`, `pp_attractor`, `object_relative` and
-`subject_relative`. Pairs that pass the joint clean/corrupted criterion in both
-languages are written to `sanity_pairs.jsonl`.
+The evaluator reports accuracy, pair accuracy and oriented answer-sequence
+log-probability difference for the original and clone languages across `simple`,
+`pp_attractor`, `object_relative` and `subject_relative`. This reduces exactly to
+the old logit difference for single-token answers and also supports multi-token
+answers. Pairs that pass the joint clean/corrupted criterion in both languages are
+written to `sanity_pairs.jsonl`.
 
 ```bash
 mllms plot sva \

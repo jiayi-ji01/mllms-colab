@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from mllms.evaluation.sva.scoring import final_logit_difference
+from mllms.evaluation.sva.scoring import sequence_log_probability_difference
 from mllms.interpretability.activation_patching.metrics import METRICS, site_scores
 from mllms.model.transformer import GPT
 
@@ -29,17 +29,26 @@ def patch_batch(
         [example["corrupted_ids"] for example in examples], device=device
     )
     clean_answers = torch.tensor(
-        [example["clean_answer_id"] for example in examples], device=device
+        [
+            example.get("clean_answer_ids", [example.get("clean_answer_id")])
+            for example in examples
+        ], device=device
     )
     corrupted_answers = torch.tensor(
-        [example["corrupted_answer_id"] for example in examples], device=device
+        [
+            example.get(
+                "corrupted_answer_ids", [example.get("corrupted_answer_id")]
+            )
+            for example in examples
+        ], device=device
     )
 
-    clean_logits, clean_cache = model.run_with_cache(clean)
-    corrupted_logits, _ = model(corrupted)
-    clean_ld = final_logit_difference(clean_logits, clean_answers, corrupted_answers)
-    corrupted_ld = final_logit_difference(
-        corrupted_logits, clean_answers, corrupted_answers
+    _, clean_cache = model.run_with_cache(clean)
+    clean_ld = sequence_log_probability_difference(
+        model, clean, clean_answers, corrupted_answers
+    )
+    corrupted_ld = sequence_log_probability_difference(
+        model, corrupted, clean_answers, corrupted_answers
     )
     denominator = clean_ld - corrupted_ld
 
@@ -97,12 +106,12 @@ def patch_batch(
                     return patched
 
                 with model.hooks({name: patch_component}):
-                    patched_logits, _ = model(corrupted[example_indices])
-                patched_ld = final_logit_difference(
-                    patched_logits,
-                    clean_answers[example_indices],
-                    corrupted_answers[example_indices],
-                )
+                    patched_ld = sequence_log_probability_difference(
+                        model,
+                        corrupted[example_indices],
+                        clean_answers[example_indices],
+                        corrupted_answers[example_indices],
+                    )
                 delta_ld, recovery = site_scores(
                     patched_ld,
                     corrupted_ld[example_indices],
@@ -149,12 +158,12 @@ def patch_batch(
                 return patched
 
             with model.hooks({name: patch_head}):
-                patched_logits, _ = model(corrupted[example_indices])
-            patched_ld = final_logit_difference(
-                patched_logits,
-                clean_answers[example_indices],
-                corrupted_answers[example_indices],
-            )
+                patched_ld = sequence_log_probability_difference(
+                    model,
+                    corrupted[example_indices],
+                    clean_answers[example_indices],
+                    corrupted_answers[example_indices],
+                )
             delta_ld, recovery = site_scores(
                 patched_ld,
                 corrupted_ld[example_indices],
