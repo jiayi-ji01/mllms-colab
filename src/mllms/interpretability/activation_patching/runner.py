@@ -170,6 +170,8 @@ def _select_fixed_records(
     records: list[dict],
     baseline_scores: dict,
     max_examples: int,
+    *,
+    require_shuffled_controls: bool = False,
 ) -> tuple[list[dict], list[dict]]:
     """Choose a deterministic task/number-balanced cohort without sanity filtering."""
     eligible = []
@@ -197,6 +199,55 @@ def _select_fixed_records(
             str(record.get("clean_type", "unknown")),
             str(record.get("clean_attractor_relation", "none")),
         )].append(record)
+    if require_shuffled_controls:
+        if max_examples % 4:
+            raise ValueError(
+                "max-examples must be divisible by four when shuffled controls are requested"
+            )
+        paired: dict[tuple[str, int], dict[str, list[dict]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        for record in eligible:
+            paired[(str(record.get("task", "unknown")), len(record["clean_input_ids"]))][
+                str(record.get("clean_type", "unknown"))
+            ].append(record)
+        by_task: dict[str, list[tuple[list[dict], list[dict]]]] = defaultdict(list)
+        for (task, _), by_number in sorted(paired.items()):
+            singular = by_number.get("singular", [])
+            plural = by_number.get("plural", [])
+            if len(singular) >= 2 and len(plural) >= 2:
+                by_task[task].append((singular, plural))
+        accepted = []
+        offsets = {task: 0 for task in by_task}
+        task_names = sorted(by_task)
+        while len(accepted) + 4 <= max_examples:
+            made_progress = False
+            for task in task_names:
+                options = by_task[task]
+                if not options:
+                    continue
+                index = offsets[task] % len(options)
+                group_round = offsets[task] // len(options)
+                singular, plural = options[index]
+                start = group_round * 2
+                if start + 2 > len(singular) or start + 2 > len(plural):
+                    offsets[task] += 1
+                    continue
+                accepted.extend([*singular[start : start + 2], *plural[start : start + 2]])
+                offsets[task] += 1
+                made_progress = True
+                if len(accepted) >= max_examples:
+                    break
+            if not made_progress:
+                break
+        if len(accepted) < max_examples:
+            rejected.append({
+                "reason": "insufficient paired task/length/number strata for shuffled controls",
+                "requested": max_examples,
+                "selected": len(accepted),
+            })
+        return accepted, rejected
+
     accepted = []
     offsets = {key: 0 for key in strata}
     while len(accepted) < min(max_examples, len(eligible)):
@@ -341,6 +392,9 @@ def main() -> None:
             records,
             baseline_scores,
             args.max_examples,
+            require_shuffled_controls=any(
+                "shuffled" in control for control in (args.controls or ())
+            ),
         )
     else:
         accepted_records = sanity_selected
