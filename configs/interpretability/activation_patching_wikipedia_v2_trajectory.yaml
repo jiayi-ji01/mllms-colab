@@ -1,0 +1,25 @@
+run:
+  tokenizer: artifacts/wikipedia_tokenizer/tokenizer.model
+  data: data/sva/controlled_v2/test.jsonl
+  output_dir: outputs/interpretability/wikipedia_cross_language_v2_trajectory
+  device: auto
+  language: both
+  directions:
+    - original-to-original
+    - clone-to-clone
+    - original-to-clone
+    - clone-to-original
+  components:
+    - head_out
+  prediction_position_only: true
+  selection: all
+  controls:
+    - clean
+    - opposite-number-shuffled
+  max_examples: 1000
+  max_input_pairs: null
+  example_batch_size: 8
+  intervention_batch_size: 64
+  max_positions: null
+  sanity_margin: 0.0
+  denominator_epsilon: 0.000001

@@ -117,6 +117,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-batches", type=int)
     parser.add_argument("--full-validation", action="store_true")
     parser.add_argument(
+        "--split",
+        choices=("validation", "test"),
+        default="validation",
+        help="Held-out token stream used for loss/perplexity.",
+    )
+    parser.add_argument(
         "--languages",
         nargs="+",
         choices=("original", "clone"),
@@ -155,7 +161,7 @@ def main() -> None:
         p_clone=training_config.p_clone,
         pad_id=tokenizer.pad_id(),
     )
-    validation_stream = TokenStream(data_dir, "validation")
+    evaluation_stream = TokenStream(data_dir, args.split)
     prefixes = read_prefixes(args.prefix_file, args.num_prefixes)
     device = select_device(args.device)
     precision = select_precision(device) if args.precision == "auto" else args.precision
@@ -165,7 +171,7 @@ def main() -> None:
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Checkpoint step: {checkpoint.get('step', 'unknown')}")
     print(f"Tokenizer: {tokenizer_path}")
-    print(f"Validation data: {validation_stream.path}")
+    print(f"Evaluation data ({args.split}): {evaluation_stream.path}")
     print(f"Device / precision: {device} / {precision}")
     print(f"Prefixes: {len(prefixes)}; top-k: {args.top_k}")
 
@@ -194,7 +200,7 @@ def main() -> None:
     validation_rows = evaluate_languages(
         trained_model,
         "trained",
-        validation_stream,
+        evaluation_stream,
         clone_mapper,
         args.languages,
         eval_batch_size,
@@ -213,7 +219,7 @@ def main() -> None:
         evaluate_languages(
             random_model,
             "random_initialization",
-            validation_stream,
+            evaluation_stream,
             clone_mapper,
             args.languages,
             eval_batch_size,
@@ -232,7 +238,7 @@ def main() -> None:
                 f"positions {row['valid_next_token_positions']:,}"
             )
 
-    validation_path = output_dir / "validation_loss_perplexity.csv"
+    validation_path = output_dir / f"{args.split}_loss_perplexity.csv"
     validation_fields = [
         "model", "language", "average_cross_entropy", "perplexity",
         "valid_next_token_positions",
@@ -245,14 +251,18 @@ def main() -> None:
         "checkpoint": str(args.checkpoint),
         "checkpoint_step": checkpoint.get("step"),
         "tokenizer": str(tokenizer_path),
-        "validation_data": str(validation_stream.path),
+        "evaluation_split": args.split,
+        "evaluation_data": str(evaluation_stream.path),
+        "validation_data": str(evaluation_stream.path),
         "device": str(device),
         "precision": precision,
         "model_config": asdict(model_config),
         "num_prefixes": len(prefixes),
         "top_k": args.top_k,
+        "evaluation_mode": "full" if eval_batches is None else "deterministic_sample",
         "validation_mode": "full" if eval_batches is None else "deterministic_sample",
         "eval_batches": eval_batches,
+        "evaluation": validation_rows,
         "validation": validation_rows,
         "trained_minus_random_loss": (
             averages["trained"]["average_cross_entropy"]
@@ -268,7 +278,7 @@ def main() -> None:
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(f"Next-token predictions: {prediction_path}")
-    print(f"Validation comparison: {validation_path}")
+    print(f"{args.split.title()} comparison: {validation_path}")
     print(f"Summary: {summary_path}")
 
 
