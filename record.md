@@ -71,7 +71,7 @@ Best validation results：
 | Original | 3.6170 | 37.23 |
 | Clone | 3.6104 | 36.98 |
 
-Held-out test loss/PPL 尚未正式运行；对应 CLI 与 Slurm stage 已准备好。
+Held-out test PPL（best checkpoint，完整 test split）已完成：original `36.910`、clone `36.851`。两种 token space 的 language-model quality 接近。
 
 ## 3. 已完成实验与结果
 
@@ -147,6 +147,21 @@ recovery = (LD_patched - LD_target_corrupted)
 
 真实 best checkpoint 的 CPU smoke test 已完成：original→clone、4 fixed pairs、prediction-position heads、clean 与 opposite-number control 均成功写出结果。该运行只验证 end-to-end correctness，不作为研究证据。
 
+### 3.4 Best-checkpoint v2 confirmatory cross-language patching
+
+按固定顺序完成 32-pair pilot、400-pair dev full-grid discovery 与独立 test confirm。dev 在 test 前冻结 candidate manifest：预注册 `L8H3`，以及最多 5 个仅由 dev raw ΔLD 排名选出的 heads。test 使用四方向、prediction-position `head_out`、四种 controls 与 10,000 次 task-stratified paired bootstrap。
+
+test 输入为 3,200 pairs；四种 shuffled-control 的严格 task/length/number derangement 约束保留了 1,280-pair 共同 cohort（simple 392、PP 296、object-relative 304、subject-relative 288）。这是正式 sample size，不将其误报为 3,200。
+
+L8H3 的 pooled distractor clean-minus-null effect：
+
+| Direction | `opposite-number` 95% CI | `opposite-number-shuffled` 95% CI |
+|---|---:|---:|
+| original→clone | 0.0379 [0.0310, 0.0450] | 0.0399 [0.0311, 0.0486] |
+| clone→original | 0.2359 [0.2257, 0.2461] | 0.2342 [0.2232, 0.2454] |
+
+在两种 null 下，original→clone 在 PP attractor 与 subject-relative 为正且 Holm-adjusted p < 0.001，object-relative 不复现；clone→original 在三种 distractor construction 均为正且 Holm-adjusted p < 0.001。L8H3 的同语言 positive controls 远大于跨语言效应（pooled distractor original→original 0.6686；clone→clone 0.4943，对 `opposite-number`）。因此证据支持不对称的 cross-language causal transfer，不表示整个 circuit map 或所有 construction 都共享。
+
 ## 4. 当前可以与不可以支持的结论
 
 ### 可以支持
@@ -155,16 +170,17 @@ recovery = (LD_patched - LD_target_corrupted)
 - 模型在四类 controlled SVA 上均表现出高于 chance 的行为能力。
 - SVA behavior 随训练逐步增强，但不是单调过程。
 - Original 与 clone 的 within-language causal maps 高度相似。
-- L8H3 是值得进行 confirmatory cross-language intervention 的预注册候选。
+- 在固定 test cohort 中，L8H3 的 pooled distractor effect 在两个跨语言方向均高于 `opposite-number` 和 `opposite-number-shuffled` null，95% CI 为正。
+- 该效应在 PP attractor 与 subject-relative 双向复现；clone→original 的效应显著强于 original→clone。
 
 ### 不能支持
 
-- 不能声称已经发现 shared cross-language circuit。
+- 不能把单一 L8H3 的证据泛化为整个模型都使用相同的 cross-language circuit。
 - Heatmap correlation 不能替代 original→clone / clone→original causal intervention。
 - 单一 seed 不能估计跨训练方差。
 - 不能把 v1 aggregate recovery 当成 tokenizer-independent effect。
 - 不能把 success-only sanity subset 的结果推广到所有 SVA examples。
-- 在正式 v2 cross-language jobs 完成前，不能判断老师提出的三阶段 circuit-development 假说。
+- 尚未运行六 checkpoint cross-language trajectory，不能判断三阶段 circuit-development 假说。
 
 ## 5. 已解决失败与工程状态
 
@@ -173,7 +189,7 @@ recovery = (LD_patched - LD_target_corrupted)
 - Training job `470124` 完成 77,560 steps。
 - Best patching job `470177` 完成 v1 within-language full run。
 - 当前测试：26/26 passed。
-- 当前分支：`wikipedia`；已提交基线 commit 为 `29020fa`，本轮 v2/cross-language 工作尚未提交。
+- 当前分支：`controlled-sva-versioning`；v2/cross-language implementation 已推送，最新实验修复 commit 为 `a4d7ace`。
 
 ## 6. 实验限制与开放问题
 
@@ -183,7 +199,7 @@ recovery = (LD_patched - LD_target_corrupted)
 4. v1 overall patch maps 被 simple samples 主导；v2 必须按 task 分层报告。
 5. 大型 checkpoints、token streams 与 per-example outputs 不进入 Git；需要保存 compact summaries 与 manifest。
 6. 本地 repository 通过 `/workspace/...` symlinks 访问集群 artifacts，迁移环境时必须重新建立路径或显式传参。
-7. Held-out test PPL 尚待运行。
+7. Confirmatory test 因严格 shuffled-control derangement 只能使用 1,280 / 3,200 pairs；结论限定于该共同 cohort，未来可设计覆盖率更高的 control sampler。
 
 ## 7. 决策日志
 
@@ -202,12 +218,12 @@ recovery = (LD_patched - LD_target_corrupted)
 - [x] 实现四方向 source→target patching。
 - [x] 实现 controls、component selection、fixed cohort 与统计函数。
 - [x] 真实 checkpoint end-to-end smoke test。
+- [x] 运行 best checkpoint held-out test PPL。
+- [x] 用 best checkpoint + dev split 运行 full-grid discovery。
+- [x] 用 best checkpoint + test split 运行 L8H3 confirmatory 与 controls。
+- [x] 对冻结 sites 运行 10,000 次 paired bootstrap，并同时比较两种 number null。
 - [ ] 提交 `cluster/sva-v2-array.sbatch`，完成六阶段点与 best 的 v2 SVA。
-- [ ] 用 best checkpoint + dev split 运行 full-grid discovery。
-- [ ] 用 best checkpoint + test split 运行 L8H3 confirmatory 与 controls。
-- [ ] 对 L8H3 和 dev 预先选出的 sites 运行10,000次 paired bootstrap。
 - [ ] 提交六 checkpoint prediction-position head trajectory。
-- [ ] 运行 best checkpoint held-out test PPL。
 - [ ] 归档 compact summaries、figures、checksums 和 Slurm job IDs。
 - [ ] 更新 dashboard，使其优先读取 v2 summaries，并在缺少大文件时仍可执行。
 
@@ -215,7 +231,7 @@ recovery = (LD_patched - LD_target_corrupted)
 
 只有在以下条件全部满足时，才报告 shared-circuit 正面证据：
 
-1. Pooled distractor effect 在 original→clone 与 clone→original 两个方向都高于 empirical null；
+1. Pooled distractor effect 在 original→clone 与 clone→original 两个方向都高于 `opposite-number` 与 `opposite-number-shuffled` null；
 2. 至少两个 distractor constructions 复现正效应；
 3. 报告95% CI、effect size、sample count、coverage 和 Holm-adjusted p-values；
 4. 同语言 positive control 正常，opposite-number null 不产生同等 recovery。
@@ -233,10 +249,11 @@ recovery = (LD_patched - LD_target_corrupted)
 | Within-language patching v1 | `activation_patching_wikipedia.yaml` | best@77,500 | 470177 | completed |
 | Cross-language v2 smoke | confirm config, 4 pairs, CPU | best@77,500 | local | validation only |
 | SVA v2 sweep | `cluster/sva-v2-array.sbatch` | 5k,15k,30k,50k,65k,75k,best | TBD | pending |
-| Cross-language v2 dev | `activation_patching_wikipedia_v2_dev.yaml` | best@77,500 | TBD | pending |
-| Cross-language v2 confirm | `activation_patching_wikipedia_v2_confirm.yaml` | best@77,500 | TBD | pending |
+| Held-out test PPL | `STAGE=test-ppl` | best@77,500 | 472352 | completed; PPL 36.910 / 36.851 |
+| Cross-language v2 pilot | `activation_patching_wikipedia_v2_pilot.yaml` | best@77,500 | 472354 | completed; 32-pair engineering gate |
+| Cross-language v2 dev | `activation_patching_wikipedia_v2_dev.yaml` | best@77,500 | 472357 | completed; 400-pair discovery |
+| Cross-language v2 confirm | `activation_patching_wikipedia_v2_confirm.yaml` | best@77,500 | 472359 | completed; 1,280-pair common cohort |
 | Cross-language trajectory | `cluster/patch-trajectory-v2-array.sbatch` | 5k,15k,30k,50k,65k,best | TBD | pending |
-| Held-out test PPL | `STAGE=test-ppl` | best@77,500 | TBD | pending |
 
 ## 附录 A：老师邮件原文
 
