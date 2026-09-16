@@ -30,6 +30,6 @@ mkdir -p logs
 export STAGE=patch
 export CHECKPOINT
 export PATCH_CONFIG=configs/interpretability/activation_patching_wikipedia_v2_trajectory.yaml
-export OUTPUT_DIR="outputs/interpretability/wikipedia_cross_language_v2_trajectory/${STEP_NAME}"
+export OUTPUT_DIR="outputs/interpretability/wikipedia_cross_language_v2_trajectory_1280_double_null/${STEP_NAME}"
 nvidia-smi
 srun scripts/run_v2_analysis.sh
