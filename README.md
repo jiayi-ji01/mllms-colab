@@ -153,7 +153,32 @@ mllms plot sva \
   --results-dir "outputs/evaluation/wikipedia_sva/${STEP_NAME}"
 ```
 
-## Activation-patching preparation
+## Tokenizer-aligned SVA v2
+
+The historical `controlled_v1` suite is retained for comparison, but its verb
+answers can become multi-token under the Wikipedia tokenizer. Build the primary
+Wikipedia-aligned suite with the tokenizer used by the model:
+
+```bash
+mllms analyze build-controlled-sva \
+  --config configs/evaluation/sva_wikipedia_v2.yaml
+```
+
+This writes a lexically disjoint 400-pair development split and 3,200-pair test
+split. Every answer is one token and every clean/corrupted prompt has aligned
+token boundaries. Evaluate a checkpoint into a checkpoint-specific directory:
+
+```bash
+mllms analyze evaluate-sva \
+  --config configs/evaluation/sva_wikipedia_v2.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --output-dir "outputs/evaluation/wikipedia_sva_v2/${STEP_NAME}" \
+  --device cuda
+```
+
+## Cross-language activation patching
+
+### Historical within-language baseline
 
 Use the checkpoint-specific sanity set. Patching is deliberately not part of the
 training loop.
@@ -177,6 +202,40 @@ mllms plot patching \
   --language original \
   --metric recovery
 ```
+
+### V2 source-to-target experiments
+
+The v2 runner supports explicit source-to-target directions. Source clean
+activations are inserted into the target corrupted execution, and recovery is
+normalized using the target clean/corrupted LD difference.
+
+```bash
+mllms analyze activation-patching \
+  --config configs/interpretability/activation_patching_wikipedia_v2_confirm.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --output-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
+  --device cuda
+```
+
+Results are separated as
+`original_to_clone/<control>/`, `clone_to_original/<control>/`, and the two
+within-language positive controls. The confirmatory config scans all heads at
+the prediction position with clean, opposite-number, same-number-shuffled, and
+opposite-number-shuffled source activations. Run the registered L8H3 analysis:
+
+```bash
+mllms analyze patching-statistics \
+  --results-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
+  --data data/sva/controlled_v2/test.jsonl \
+  --output-dir outputs/analysis/wikipedia_cross_language_v2_confirm \
+  --control opposite-number-shuffled \
+  --sites 8:3 \
+  --iterations 10000
+```
+
+For the fixed six-checkpoint trajectory, submit
+`cluster/patch-trajectory-v2-array.sbatch`. Submit
+`cluster/sva-v2-array.sbatch` for the matching behavioral sweep.
 
 ## Cluster execution
 

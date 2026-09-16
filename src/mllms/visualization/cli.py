@@ -32,6 +32,11 @@ def parse_args() -> argparse.Namespace:
     patching.add_argument(
         "--metric", choices=("delta_ld", "recovery"), default="recovery"
     )
+    patching.add_argument(
+        "--direction",
+        help="V2 direction directory such as original_to_clone.",
+    )
+    patching.add_argument("--control", default="clean")
     return parser.parse_args()
 
 
@@ -50,6 +55,8 @@ def main() -> None:
             args.top_k,
             args.language,
             args.metric,
+            args.direction,
+            args.control,
         )
 
 

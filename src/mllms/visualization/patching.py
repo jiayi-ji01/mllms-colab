@@ -20,13 +20,28 @@ def plot_patching(
     top_k: int,
     language: str,
     metric: str,
+    direction: str | None = None,
+    control: str = "clean",
 ) -> None:
-    language_dir = results_dir / language
+    language_dir = (
+        results_dir / direction / control
+        if direction is not None
+        else results_dir / language
+    )
     if not language_dir.is_dir():
-        raise FileNotFoundError(f"Missing {language} patching results: {language_dir}")
+        raise FileNotFoundError(f"Missing patching results: {language_dir}")
+    available_components = [
+        component
+        for component in COMPONENTS
+        if (language_dir / f"{component}_{metric}_mean.npy").is_file()
+    ]
+    if not available_components:
+        raise FileNotFoundError(
+            f"No {metric} component arrays found in {language_dir}"
+        )
     means = {
         component: np.load(language_dir / f"{component}_{metric}_mean.npy")
-        for component in COMPONENTS
+        for component in available_components
     }
     archive = np.load(language_dir / "per_example_scores.npz")
     relative_positions = archive["relative_positions"]
@@ -37,8 +52,14 @@ def plot_patching(
         "mlp_out": "MLP Output",
         "head_out": "Attention Heads",
     }
-    figure, axes = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
-    for axis, component in zip(axes.flat, COMPONENTS):
+    figure, axes = plt.subplots(
+        1,
+        len(available_components),
+        figsize=(6 * len(available_components), 5),
+        constrained_layout=True,
+        squeeze=False,
+    )
+    for axis, component in zip(axes.flat, available_components):
         full_values = means[component]
         values = full_values[:, -1] if component == "head_out" else full_values
         finite = np.abs(values[np.isfinite(values)])
@@ -67,8 +88,12 @@ def plot_patching(
             )
             axis.set_xticks(ticks, relative_positions[ticks])
         figure.colorbar(image, ax=axis, label=f"Mean {metric}")
-    figure.suptitle(f"{language.title()} SVA Patching: {metric}")
-    figure_path = output_dir / f"patching_{language}_{metric}.png"
+    label = direction or language
+    if direction is not None:
+        label = f"{direction}/{control}"
+    figure.suptitle(f"{label} SVA Patching: {metric}")
+    safe_label = label.replace("/", "_")
+    figure_path = output_dir / f"patching_{safe_label}_{metric}.png"
     figure.savefig(figure_path, dpi=180, bbox_inches="tight")
     plt.close(figure)
 
@@ -105,7 +130,7 @@ def plot_patching(
                             }
                         )
     sites.sort(key=lambda row: row["absolute_score"], reverse=True)
-    table_path = output_dir / f"patching_top_sites_{language}_{metric}.csv"
+    table_path = output_dir / f"patching_top_sites_{safe_label}_{metric}.csv"
     write_csv(table_path, sites[:top_k])
     print(f"Figure: {figure_path}")
     print(f"Table: {table_path}")

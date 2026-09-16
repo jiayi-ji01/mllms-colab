@@ -21,6 +21,10 @@ COMMANDS = {
         "analyze",
         "activation-patching",
     ): "mllms.interpretability.activation_patching.runner",
+    (
+        "analyze",
+        "patching-statistics",
+    ): "mllms.interpretability.activation_patching.analyze",
     ("analyze", "sanity-check"): "mllms.evaluation.sanity",
     ("plot",): "mllms.visualization.cli",
 }
@@ -41,6 +45,7 @@ Commands:
   analyze build-controlled-sva    Build lexical-matched SVA minimal pairs
   analyze evaluate-sva            Evaluate SVA and select sanity pairs
   analyze activation-patching     Patch all layer/token/head sites
+  analyze patching-statistics     Compare patching effects with controls
   analyze sanity-check            Inspect checkpoint predictions and loss
   plot training|blimp|sva|patching
                                   Create figures and CSV summary tables
