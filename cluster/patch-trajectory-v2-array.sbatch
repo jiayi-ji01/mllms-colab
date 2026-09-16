@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=mllms-patch-trajectory-v2
+#SBATCH --partition=students
 #SBATCH --array=0-5
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
