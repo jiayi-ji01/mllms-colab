@@ -15,8 +15,11 @@ run:
   selection: all
   controls:
     - clean
+    - opposite-number
+    - same-number-shuffled
     - opposite-number-shuffled
-  max_examples: 1000
+  # The same fixed, derangeable cohort as the best-checkpoint confirmatory run.
+  max_examples: 1280
   max_input_pairs: null
   example_batch_size: 8
   intervention_batch_size: 64
