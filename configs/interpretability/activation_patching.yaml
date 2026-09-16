@@ -4,7 +4,13 @@ run:
   output_dir: outputs/causalgym_patching
   device: auto
   language: both
+  directions: null
+  components: null
+  prediction_position_only: false
+  selection: joint-sanity
+  controls: null
   max_examples: 1000
+  max_input_pairs: null
   example_batch_size: 8
   intervention_batch_size: 64
   max_positions: null

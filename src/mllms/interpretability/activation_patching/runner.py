@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 from dataclasses import asdict
+import hashlib
 import json
 from pathlib import Path
 
@@ -12,7 +13,10 @@ from mllms.config import parse_configured_args
 from mllms.data.cloned_language import ClonedMapper
 from mllms.evaluation.sva.pairs import map_pair, read_pairs
 from mllms.evaluation.sva.scoring import LANGUAGES, score_language_pairs
-from mllms.interpretability.activation_patching.interventions import patch_batch
+from mllms.interpretability.activation_patching.interventions import (
+    ALL_COMPONENTS,
+    patch_batch,
+)
 from mllms.interpretability.activation_patching.results import (
     aggregate_results,
     save_language_results,
@@ -43,7 +47,50 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--language", choices=("original", "clone", "both")
     )
+    parser.add_argument(
+        "--directions",
+        nargs="+",
+        choices=(
+            "original-to-original",
+            "clone-to-clone",
+            "original-to-clone",
+            "clone-to-original",
+        ),
+        help="Explicit source-to-target patching directions.",
+    )
+    parser.add_argument(
+        "--components",
+        nargs="+",
+        choices=ALL_COMPONENTS,
+        help="Activation components to patch (default: all).",
+    )
+    parser.add_argument(
+        "--prediction-position-only",
+        action="store_true",
+        help="Patch only the final prompt position.",
+    )
+    parser.add_argument(
+        "--selection",
+        choices=("joint-sanity", "all"),
+        help="Select joint sanity-passed pairs or a fixed all-pairs cohort.",
+    )
+    parser.add_argument(
+        "--controls",
+        nargs="+",
+        choices=(
+            "clean",
+            "opposite-number",
+            "same-number-shuffled",
+            "opposite-number-shuffled",
+        ),
+        help="Source-activation controls to run (default: clean).",
+    )
     parser.add_argument("--max-examples", type=int)
+    parser.add_argument(
+        "--max-input-pairs",
+        type=int,
+        help="Read only the first N pairs for a smoke test.",
+    )
     parser.add_argument("--example-batch-size", type=int)
     parser.add_argument("--intervention-batch-size", type=int)
     parser.add_argument(
@@ -119,6 +166,124 @@ def _select_balanced_records(
     return accepted, sanity_records, sanity_rejected
 
 
+def _select_fixed_records(
+    records: list[dict],
+    baseline_scores: dict,
+    max_examples: int,
+) -> tuple[list[dict], list[dict]]:
+    """Choose a deterministic task/number-balanced cohort without sanity filtering."""
+    eligible = []
+    rejected = []
+    for record in records:
+        sample_id = str(record["sample_id"])
+        if len(record["clean_input_ids"]) != len(record["corrupted_input_ids"]):
+            rejected.append({
+                "sample_id": sample_id,
+                "reason": "activation patching requires equal prompt token lengths",
+            })
+            continue
+        if any(sample_id not in baseline_scores[name] for name in LANGUAGES):
+            rejected.append({
+                "sample_id": sample_id,
+                "reason": "baseline score unavailable in at least one language",
+            })
+            continue
+        eligible.append(record)
+
+    strata: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    for record in eligible:
+        strata[(
+            str(record.get("task", "unknown")),
+            str(record.get("clean_type", "unknown")),
+            str(record.get("clean_attractor_relation", "none")),
+        )].append(record)
+    accepted = []
+    offsets = {key: 0 for key in strata}
+    while len(accepted) < min(max_examples, len(eligible)):
+        made_progress = False
+        for key in sorted(strata):
+            offset = offsets[key]
+            if offset >= len(strata[key]):
+                continue
+            accepted.append(strata[key][offset])
+            offsets[key] += 1
+            made_progress = True
+            if len(accepted) >= max_examples:
+                break
+        if not made_progress:
+            break
+    return accepted, rejected
+
+
+def _resolve_directions(args: argparse.Namespace) -> list[tuple[str, str]]:
+    if args.directions:
+        return [tuple(value.split("-to-", maxsplit=1)) for value in args.directions]
+    languages = tuple(LANGUAGES) if args.language == "both" else (args.language,)
+    return [(language, language) for language in languages]
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_control_sources(
+    source_examples: list[dict],
+    control: str,
+) -> list[dict]:
+    """Build deterministic source activations while retaining target sample IDs."""
+    if control in {"clean", "opposite-number"}:
+        controlled = []
+        for example in source_examples:
+            item = dict(example)
+            item["source_sample_id"] = str(example["sample_id"])
+            if control == "opposite-number":
+                item["clean_ids"] = list(example["corrupted_ids"])
+            controlled.append(item)
+        return controlled
+
+    opposite = control == "opposite-number-shuffled"
+    groups: dict[tuple[str, int, str], list[dict]] = defaultdict(list)
+    for example in source_examples:
+        groups[(
+            str(example["task"]),
+            len(example["clean_ids"]),
+            str(example["clean_type"]),
+        )].append(example)
+
+    controlled = []
+    offsets: dict[tuple[str, int, str], int] = defaultdict(int)
+    for target in source_examples:
+        desired_type = str(target["clean_type"])
+        if opposite:
+            desired_type = "plural" if desired_type == "singular" else "singular"
+        key = (
+            str(target["task"]),
+            len(target["clean_ids"]),
+            desired_type,
+        )
+        candidates = groups.get(key, [])
+        if not candidates or (
+            not opposite
+            and len(candidates) == 1
+            and str(candidates[0]["sample_id"]) == str(target["sample_id"])
+        ):
+            raise ValueError(
+                f"cannot construct {control} control for {target['sample_id']}"
+            )
+        rotation = 0 if opposite else 1
+        source = candidates[(offsets[key] + rotation) % len(candidates)]
+        offsets[key] += 1
+        item = dict(source)
+        item["source_sample_id"] = str(source["sample_id"])
+        item["sample_id"] = str(target["sample_id"])
+        controlled.append(item)
+    return controlled
+
+
 def main() -> None:
     args = parse_args()
     for name in ("max_examples", "example_batch_size", "intervention_batch_size"):
@@ -126,6 +291,12 @@ def main() -> None:
             raise ValueError(f"{name.replace('_', '-')} must be positive")
     if args.max_positions is not None and args.max_positions <= 0:
         raise ValueError("max-positions must be positive")
+    if args.max_input_pairs is not None and args.max_input_pairs <= 0:
+        raise ValueError("max-input-pairs must be positive")
+    if args.prediction_position_only and args.max_positions not in (None, 1):
+        raise ValueError(
+            "prediction-position-only conflicts with max-positions other than 1"
+        )
     if args.sanity_margin < 0 or args.denominator_epsilon <= 0:
         raise ValueError("sanity-margin must be non-negative and epsilon positive")
 
@@ -140,7 +311,7 @@ def main() -> None:
     if mapper.model_vocab_size != model_config.vocab_size:
         raise ValueError("checkpoint and tokenizer vocabulary sizes differ")
 
-    records = read_pairs(args.data, tokenizer=tokenizer)
+    records = read_pairs(args.data, args.max_input_pairs, tokenizer=tokenizer)
     baseline_scores = {}
     baseline_rejected = []
     for language, language_id in LANGUAGES.items():
@@ -157,30 +328,47 @@ def main() -> None:
             {"language": language, **record} for record in rejected
         )
 
-    accepted_records, sanity_records, sanity_rejected = _select_balanced_records(
+    sanity_selected, sanity_records, sanity_rejected = _select_balanced_records(
         records,
         baseline_scores,
         args.max_examples,
         args.sanity_margin,
         args.denominator_epsilon,
     )
+    fixed_rejected = []
+    if args.selection == "all":
+        accepted_records, fixed_rejected = _select_fixed_records(
+            records,
+            baseline_scores,
+            args.max_examples,
+        )
+    else:
+        accepted_records = sanity_selected
     if not accepted_records:
-        raise ValueError("No pair passed the joint original/clone SVA sanity check")
+        raise ValueError("No pair is eligible for the requested patching selection")
 
-    requested_languages = (
-        tuple(LANGUAGES) if args.language == "both" else (args.language,)
-    )
+    directions = _resolve_directions(args)
+    components = tuple(args.components or ALL_COMPONENTS)
+    controls = tuple(args.controls or ("clean",))
+    max_positions = 1 if args.prediction_position_only else args.max_positions
     args.output_dir.mkdir(parents=True, exist_ok=True)
     common_sample_ids = [str(record["sample_id"]) for record in accepted_records]
     root_metadata = {
         "config": str(args.config),
         "checkpoint": str(args.checkpoint),
+        "checkpoint_sha256": _sha256(args.checkpoint),
         "checkpoint_step": int(checkpoint["step"]),
         "model_config": asdict(model_config),
         "tokenizer": str(args.tokenizer),
+        "tokenizer_sha256": _sha256(args.tokenizer),
         "data": str(args.data),
+        "dataset": str(records[0].get("dataset", "unknown")),
+        "data_sha256": _sha256(args.data),
         "device": str(device),
-        "languages": list(requested_languages),
+        "directions": [f"{source}-to-{target}" for source, target in directions],
+        "components": list(components),
+        "controls": list(controls),
+        "selection": args.selection,
         "num_input_pairs": len(records),
         "num_joint_sanity_pairs_available": len(sanity_records),
         "num_patched_pairs": len(accepted_records),
@@ -199,9 +387,18 @@ def main() -> None:
         ),
         "num_baseline_rejected": len(baseline_rejected),
         "num_sanity_rejected": len(sanity_rejected),
+        "num_fixed_selection_rejected": len(fixed_rejected),
+        "selection_rejections": fixed_rejected,
         "sample_ids": common_sample_ids,
         "random_seed": None,
-        "selection_order": "input order with deterministic singular/plural alternation",
+        "selection_order": (
+            "deterministic task/number/attractor round-robin"
+            if args.selection == "all"
+            else "input order with deterministic singular/plural alternation"
+        ),
+        "control_pairing": (
+            "deterministic rotation within task/prompt-length/number strata"
+        ),
         "example_batch_size": args.example_batch_size,
         "intervention_batch_size": args.intervention_batch_size,
         "sanity_margin": args.sanity_margin,
@@ -223,70 +420,89 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    for language in requested_languages:
-        mapped = [
-            map_pair(
-                record,
-                mapper,
-                LANGUAGES[language],
-                model_config.block_size,
-            )
+    mapped_by_language = {
+        language: [
+            map_pair(record, mapper, language_id, model_config.block_size)
             for record in accepted_records
         ]
-        grouped: dict[tuple[int, int, int], list[dict]] = defaultdict(list)
-        for example in mapped:
-            grouped[(
-                len(example["clean_ids"]),
-                len(example["clean_answer_ids"]),
-                len(example["corrupted_answer_ids"]),
-            )].append(example)
+        for language, language_id in LANGUAGES.items()
+    }
+    for source_language, target_language in directions:
+        base_source_examples = mapped_by_language[source_language]
+        target_examples = mapped_by_language[target_language]
+        direction_name = f"{source_language}_to_{target_language}"
+        for control in controls:
+            source_examples = build_control_sources(base_source_examples, control)
+            grouped: dict[
+                tuple[int, int, int], list[tuple[dict, dict]]
+            ] = defaultdict(list)
+            for source, target in zip(source_examples, target_examples):
+                group_key = (
+                    len(target["corrupted_ids"]),
+                    len(target["clean_answer_ids"]),
+                    len(target["corrupted_answer_ids"]),
+                )
+                grouped[group_key].append((source, target))
 
-        results = []
-        completed = 0
-        for group_key in sorted(grouped):
-            group = grouped[group_key]
-            for start in range(0, len(group), args.example_batch_size):
-                batch = group[start : start + args.example_batch_size]
-                results.extend(
-                    patch_batch(
-                        model,
-                        batch,
-                        device,
-                        args.max_positions,
-                        args.intervention_batch_size,
+            results = []
+            completed = 0
+            for group_key in sorted(grouped):
+                group = grouped[group_key]
+                for start in range(0, len(group), args.example_batch_size):
+                    pair_batch = group[start : start + args.example_batch_size]
+                    source_batch = [pair[0] for pair in pair_batch]
+                    target_batch = [pair[1] for pair in pair_batch]
+                    results.extend(
+                        patch_batch(
+                            model,
+                            source_batch,
+                            device,
+                            max_positions,
+                            args.intervention_batch_size,
+                            target_examples=target_batch,
+                            components=components,
+                            denominator_epsilon=args.denominator_epsilon,
+                        )
                     )
-                )
-                completed += len(batch)
-                print(
-                    f"{language:8s} | {completed:4d}/{len(mapped)} pairs | "
-                    f"prompt/answer lengths {group_key}"
-                )
+                    completed += len(pair_batch)
+                    print(
+                        f"{source_language:8s}->{target_language:8s} | "
+                        f"{control:24s} | "
+                        f"{completed:4d}/{len(source_examples)} pairs | "
+                        f"prompt/answer lengths {group_key}"
+                    )
 
-        by_id = {result["sample_id"]: result for result in results}
-        results = [by_id[sample_id] for sample_id in common_sample_ids]
-        means, counts, per_example, relative_positions = aggregate_results(
-            results,
-            model_config.n_layers,
-            model_config.n_heads,
-            args.max_positions,
-        )
-        language_dir = args.output_dir / language
-        save_language_results(
-            language_dir,
-            means,
-            counts,
-            per_example,
-            relative_positions,
-            results,
-            {
-                **root_metadata,
-                "language": language,
-                "n_layers": model_config.n_layers,
-                "n_heads": model_config.n_heads,
-                "max_positions": args.max_positions,
-            },
-        )
-        print(f"{language} results: {language_dir}")
+            by_id = {result["sample_id"]: result for result in results}
+            results = [by_id[sample_id] for sample_id in common_sample_ids]
+            means, counts, per_example, relative_positions = aggregate_results(
+                results,
+                model_config.n_layers,
+                model_config.n_heads,
+                max_positions,
+            )
+            direction_dir = args.output_dir / direction_name / control
+            control_condition = (
+                ("within_language_" if source_language == target_language else "cross_language_")
+                + control
+            )
+            save_language_results(
+                direction_dir,
+                means,
+                counts,
+                per_example,
+                relative_positions,
+                results,
+                {
+                    **root_metadata,
+                    "source_language": source_language,
+                    "target_language": target_language,
+                    "control_condition": control_condition,
+                    "n_layers": model_config.n_layers,
+                    "n_heads": model_config.n_heads,
+                    "max_positions": max_positions,
+                },
+            )
+            print(f"{direction_name}/{control} results: {direction_dir}")
 
     print(
         f"Common sanity-passed pairs: {len(sanity_records):,}; "
