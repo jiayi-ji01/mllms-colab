@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 
-from mllms.interpretability.activation_patching.interventions import ALL_COMPONENTS
 from mllms.interpretability.activation_patching.metrics import METRICS
 
 
@@ -32,13 +31,14 @@ def aggregate_results(
     max_positions: int | None,
 ) -> tuple[dict, dict, dict, np.ndarray]:
     """Right-align variable prompt lengths and average every patch site."""
+    components = tuple(results[0]["scores"][METRICS[0]])
     width = max(result["position_count"] for result in results)
     if max_positions is not None:
         width = min(width, max_positions)
     count = len(results)
     per_example = {metric: {} for metric in METRICS}
     for metric in METRICS:
-        for component in ALL_COMPONENTS:
+        for component in components:
             shape = (
                 (count, n_layers, width, n_heads)
                 if component == "head_out"
@@ -51,7 +51,7 @@ def aggregate_results(
     for index, result in enumerate(results):
         used = min(width, result["position_count"])
         for metric in METRICS:
-            for component in ALL_COMPONENTS:
+            for component in components:
                 per_example[metric][component][index, :, -used:] = result[
                     "scores"
                 ][metric][component][:, -used:]
@@ -59,7 +59,7 @@ def aggregate_results(
     means = {metric: {} for metric in METRICS}
     counts = {metric: {} for metric in METRICS}
     for metric in METRICS:
-        for component in ALL_COMPONENTS:
+        for component in components:
             means[metric][component], counts[metric][component] = _mean_and_count(
                 per_example[metric][component]
             )
@@ -80,7 +80,7 @@ def save_language_results(
     archive = {
         f"{component}_{metric}": per_example[metric][component]
         for metric in METRICS
-        for component in ALL_COMPONENTS
+        for component in per_example[metric]
     }
     np.savez_compressed(
         output_dir / "per_example_scores.npz",
@@ -89,7 +89,7 @@ def save_language_results(
         sample_ids=np.asarray([result["sample_id"] for result in results]),
     )
     for metric in METRICS:
-        for component in ALL_COMPONENTS:
+        for component in per_example[metric]:
             np.save(
                 output_dir / f"{component}_{metric}_mean.npy",
                 means[metric][component],
@@ -109,12 +109,14 @@ def save_language_results(
                 "layer",
                 "relative_position",
                 "head",
+                "mean_patched_ld",
                 "mean_delta_ld",
                 "mean_recovery",
                 "num_examples",
             ]
         )
-        for component in ALL_COMPONENTS:
+        for component in per_example["recovery"]:
+            patched_values = means["patched_ld"][component]
             delta_values = means["delta_ld"][component]
             recovery_values = means["recovery"][component]
             count_values = counts["recovery"][component]
@@ -128,6 +130,7 @@ def save_language_results(
                                     layer,
                                     int(position),
                                     head,
+                                    float(patched_values[layer, position_index, head]),
                                     float(delta_values[layer, position_index, head]),
                                     float(recovery_values[layer, position_index, head]),
                                     int(count_values[layer, position_index, head]),
@@ -142,6 +145,7 @@ def save_language_results(
                                 layer,
                                 int(position),
                                 "",
+                                float(patched_values[layer, position_index]),
                                 float(delta_values[layer, position_index]),
                                 float(recovery_values[layer, position_index]),
                                 int(count_values[layer, position_index]),
@@ -155,9 +159,10 @@ def save_language_results(
                 key: result[key]
                 for key in (
                     "sample_id",
+                    "source_sample_id",
                     "sequence_length",
-                    "clean_ld",
-                    "corrupted_ld",
+                    "target_clean_ld",
+                    "target_corrupted_ld",
                     "denominator",
                 )
             }
