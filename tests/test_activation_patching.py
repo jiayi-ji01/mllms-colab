@@ -3,12 +3,46 @@ import unittest
 import torch
 
 from mllms.interpretability.activation_patching.interventions import patch_batch
-from mllms.interpretability.activation_patching.runner import build_control_sources
+from mllms.interpretability.activation_patching.runner import (
+    _select_fixed_records,
+    build_control_sources,
+)
 from mllms.model.config import GPTConfig
 from mllms.model.transformer import GPT
 
 
 class ActivationPatchingTest(unittest.TestCase):
+    def test_shuffled_control_selection_keeps_number_pairs_together(self):
+        records = []
+        scores = {"original": {}, "clone": {}}
+        for task in ("simple", "pp_attractor"):
+            for number in ("singular", "plural"):
+                for index in range(2):
+                    sample_id = f"{task}-{number}-{index}"
+                    records.append({
+                        "sample_id": sample_id,
+                        "task": task,
+                        "clean_type": number,
+                        "clean_attractor_relation": "none",
+                        "clean_input_ids": [1, 2, 3],
+                        "corrupted_input_ids": [1, 4, 3],
+                        "clean_ids": [1, 2, 3],
+                        "corrupted_ids": [1, 4, 3],
+                    })
+                    for language in scores:
+                        scores[language][sample_id] = {}
+        selected, rejected = _select_fixed_records(
+            records,
+            scores,
+            max_examples=8,
+            require_shuffled_controls=True,
+        )
+        self.assertEqual(rejected, [])
+        self.assertEqual(len(selected), 8)
+        for control in ("same-number-shuffled", "opposite-number-shuffled"):
+            controlled = build_control_sources(selected, control)
+            self.assertEqual(len(controlled), len(selected))
+
     def test_opposite_number_control_uses_corrupted_source_activation(self):
         examples = [{
             "sample_id": "example",
