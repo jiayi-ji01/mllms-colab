@@ -59,6 +59,7 @@ class ControlledSVATest(unittest.TestCase):
         records = generate_split(
             tokenizer,
             split="test",
+            dataset_name="mllms_controlled_sva_v2",
             lexicon={
                 "nouns": ["author", "doctor", "guard", "teacher"],
                 "main_verbs": ["walk", "run"],
@@ -68,6 +69,10 @@ class ControlledSVATest(unittest.TestCase):
             rng=__import__("random").Random(7),
         )
         self.assertEqual(len(records), 32)
+        self.assertEqual(
+            {row["dataset"] for row in records},
+            {"mllms_controlled_sva_v2"},
+        )
         self.assertEqual(len({row["sample_id"] for row in records}), 32)
         for task in {row["task"] for row in records}:
             group = [row for row in records if row["task"] == task]
