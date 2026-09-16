@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=mllms-sva-v2
+#SBATCH --partition=students
 #SBATCH --array=0-6
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
