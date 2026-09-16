@@ -1,0 +1,18 @@
+controlled:
+  dataset_name: mllms_controlled_sva_v2
+  tokenizer: artifacts/wikipedia_tokenizer/tokenizer.model
+  output_dir: data/sva/controlled_v2
+  dev_pairs_per_condition: 100
+  test_pairs_per_condition: 800
+  lexical_dev_fraction: 0.25
+  seed: 42
+
+evaluate:
+  tokenizer: artifacts/wikipedia_tokenizer/tokenizer.model
+  data: data/sva/controlled_v2/test.jsonl
+  output_dir: outputs/evaluation/wikipedia_sva_v2
+  device: auto
+  batch_size: 64
+  max_pairs: null
+  sanity_margin: 0.0
+  min_sanity_pairs: 500
