@@ -19,6 +19,8 @@ venv/
 /data/sva/*
 !/data/sva/controlled_v1/
 !/data/sva/controlled_v1/**
+!/data/sva/controlled_v2/
+!/data/sva/controlled_v2/**
 artifacts/
 outputs/
 checkpoints/

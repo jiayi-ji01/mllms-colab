@@ -29,6 +29,7 @@ MAIN_VERB_LEMMAS = (
     "arrive", "dance", "laugh", "run", "smile", "speak", "wait", "walk",
     "work", "sleep", "swim", "travel", "sing", "stand", "sit", "leave",
     "return", "listen", "write", "talk", "play", "cook", "drive", "teach",
+    "appear", "continue", "exist", "live", "remain", "vote", "fall", "occur",
 )
 PAST_TRANSITIVE_VERBS = (
     "admired", "called", "followed", "greeted", "helped", "hired", "invited",
