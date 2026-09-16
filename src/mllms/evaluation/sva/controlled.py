@@ -151,6 +151,7 @@ def _prompt_words(
 def make_record(
     tokenizer: Any,
     *,
+    dataset_name: str = "mllms_controlled_sva_v1",
     sample_id: str,
     split: str,
     condition: str,
@@ -238,7 +239,7 @@ def make_record(
 
     return {
         "sample_id": sample_id,
-        "dataset": "mllms_controlled_sva_v1",
+        "dataset": dataset_name,
         "split": split,
         "task": condition,
         "clean_type": clean_number,
@@ -280,6 +281,7 @@ def generate_split(
     tokenizer: Any,
     *,
     split: str,
+    dataset_name: str = "mllms_controlled_sva_v1",
     lexicon: dict[str, list[str]],
     pairs_per_condition: int,
     rng: random.Random,
@@ -330,6 +332,7 @@ def generate_split(
                 try:
                     record = make_record(
                         tokenizer,
+                        dataset_name=dataset_name,
                         sample_id=(
                             f"{split}:{condition}:"
                             f"{len(condition_records):04d}"
@@ -376,6 +379,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--tokenizer", type=Path)
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--dataset-name")
     parser.add_argument("--dev-pairs-per-condition", type=int)
     parser.add_argument("--test-pairs-per-condition", type=int)
     parser.add_argument("--lexical-dev-fraction", type=float)
@@ -408,6 +412,7 @@ def main() -> None:
     dev_records = generate_split(
         tokenizer,
         split="dev",
+        dataset_name=args.dataset_name,
         lexicon=dev_lexicon,
         pairs_per_condition=args.dev_pairs_per_condition,
         rng=random.Random(args.seed + 1),
@@ -415,6 +420,7 @@ def main() -> None:
     test_records = generate_split(
         tokenizer,
         split="test",
+        dataset_name=args.dataset_name,
         lexicon=test_lexicon,
         pairs_per_condition=args.test_pairs_per_condition,
         rng=random.Random(args.seed + 2),
@@ -425,7 +431,7 @@ def main() -> None:
     _write_jsonl(args.output_dir / "test.jsonl", test_records)
     _write_jsonl(args.output_dir / "all.jsonl", [*dev_records, *test_records])
     metadata = {
-        "dataset": "mllms_controlled_sva_v1",
+        "dataset": args.dataset_name,
         "config": str(args.config),
         "tokenizer": str(args.tokenizer),
         "tokenizer_sha256": _tokenizer_sha256(args.tokenizer),

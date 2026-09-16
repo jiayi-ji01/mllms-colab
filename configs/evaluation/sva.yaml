@@ -7,6 +7,7 @@ prepare:
   revision: 95349c3a5e53e2506e8b212482ea6dd784978156
 
 controlled:
+  dataset_name: mllms_controlled_sva_v1
   tokenizer: artifacts/babylm_tokenizer/tokenizer.model
   output_dir: data/sva/controlled_v1
   dev_pairs_per_condition: 100
