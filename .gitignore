@@ -6,17 +6,27 @@
 # Python caches and local environments
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .venv/
 venv/
 
-# Local datasets, tokenizer artifacts, and training outputs
-data/
+# Local datasets, tokenizer artifacts, and training outputs. The small,
+# canonical controlled-SVA benchmark is versioned; corpora remain ignored.
+/data/*
+!/data/sva/
+/data/sva/*
+!/data/sva/controlled_v1/
+!/data/sva/controlled_v1/**
+!/data/sva/controlled_v2/
+!/data/sva/controlled_v2/**
 artifacts/
 outputs/
 checkpoints/
 wandb/
+slurm-*.out
+logs/
 
 # Large generated files wherever they are placed
 *.bin
@@ -27,3 +37,9 @@ wandb/
 
 # Notebook execution state
 .ipynb_checkpoints/
+
+# Locally exported experiment results
+/output/
+
+# Generated Jupyter Book website
+/book/_build/

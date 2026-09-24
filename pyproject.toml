@@ -3,16 +3,21 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mllms-colab"
+name = "mllms-cloned-language"
 version = "0.1.0"
-description = "Original/cloned-language GPT pretraining experiments"
+description = "Original/cloned-language GPT pretraining and analysis"
 requires-python = ">=3.10"
 
 [project.scripts]
-mllms = "main:main"
+mllms = "mllms.cli:main"
 
-[tool.setuptools]
-py-modules = ["main", "train"]
+[project.optional-dependencies]
+book = ["jupyter-book>=2,<3"]
+report = ["numpy", "matplotlib", "nbformat", "nbconvert", "ipykernel", "mistune>=3"]
 
 [tool.setuptools.packages.find]
-include = ["analysis*", "blimp*", "data_lib*", "model*", "plots*", "tokenizer*"]
+where = ["src"]
+include = ["mllms*"]
+
+[tool.setuptools.package-dir]
+"" = "src"

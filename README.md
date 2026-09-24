@@ -1,252 +1,284 @@
-# MLLMs Colab
+# MLLMs: Wikipedia + Cloned-Language GPT
 
-训练 original/cloned-language GPT 的精简项目，支持 TinyStories 和 BabyLM。
-代码直接按
-功能放在仓库根目录，不使用额外的 `src/`、`scripts/` 或项目名包装层。
+## First report: cross-language SVA (2026-09-24)
 
-## 结构
+The [Chinese first report](reports/first_report/report_zh.md) presents the
+best-checkpoint causal-transfer evidence and six-checkpoint trajectory. The
+[executed notebook](notebooks/cross_language_dashboard.ipynb) regenerates English
+figures from portable compact results, without checkpoints or activation arrays.
+See the [evidence-pack instructions](reports/first_report/README.md) for reproduction,
+provenance and the distinction between full-test behavior and fixed-cohort patching.
 
-```text
-.
-├── main.py                       统一命令入口
-├── train.py                      预训练、验证与 checkpoint
-├── model/
-│   ├── config.py                 GPT 配置
-│   └── model.py                  decoder-only GPT
-├── data_lib/
-│   ├── cloned.py                 cloned mapping 与 TokenStream
-│   ├── prepare_babylm.py         BabyLM 100M 官方数据准备
-│   └── prepare_tinystories.py    TinyStories 固定划分
-├── tokenizer/
-│   ├── tokenizer.py              SentencePiece 加载
-│   ├── train_tokenizer.py        BPE tokenizer 训练
-│   └── tokenization.py           通用 uint16 token stream 生成
-├── blimp/
-│   ├── download_blimp.py
-│   ├── prepare_blimp.py
-│   └── evaluate_blimp.py
-├── analysis/
-│   └── activation_patching.py
-├── plots/
-│   └── reports.py                 训练、BLiMP 与 patching 报告
-├── notebooks/
-├── configs/
-│   ├── gpt12_babylm_clone_colab.yaml
-│   └── gpt12_tinystories_clone_colab.yaml
-├── requirements.txt
-└── pyproject.toml
-```
-
-数据、tokenizer、checkpoint 和实验输出分别写入 `data/`、`artifacts/` 和
-配置的 `output_dir`，不会提交到 Git。
-
-## End-to-end Colab notebook
-
-[Open the complete pipeline in Colab](https://colab.research.google.com/github/jiayi-ji01/mllms-colab/blob/main/notebooks/mllms_colab_end_to_end.ipynb)
-
-Notebook 会依次完成环境安装、数据准备或从 Drive 恢复、训练或续训、训练曲线、
-BLiMP 评估、original/clone activation patching，以及 PNG/CSV 报告展示。首次
-运行前在 Colab 中选择 GPU runtime。
-
-BabyLM 100M 的独立 end-to-end notebook：
-
-[Open the BabyLM pipeline in Colab](https://colab.research.google.com/github/jiayi-ji01/mllms-colab/blob/main/notebooks/mllms_babylm_colab_end_to_end.ipynb)
-
-## Colab 安装
-
-先选择 GPU runtime 并挂载 Drive：
-
-```python
-from google.colab import drive
-
-drive.mount("/content/drive")
-```
-
-```bash
-git clone YOUR_REPOSITORY_URL /content/mllms-colab
-cd /content/mllms-colab
-pip install -r requirements.txt
-pip install -e . --no-deps
-```
-
-Colab 自带与 CUDA 匹配的 PyTorch，因此 `requirements.txt` 不重复安装
-PyTorch。
-
-## 数据准备
-
-TinyStories：
-
-```bash
-mllms data prepare
-mllms tokenizer train
-mllms data tokenize --target-train-tokens 100000000
-```
-
-tokenize 阶段按实际 SentencePiece token 数停止，不根据文本大小估算。
-精确统计写入 `data/processed/token_counts.json`，validation/test 保持固定且不
-混入训练集。
-
-BabyLM 100M（在 Colab 中运行，不会下载到本地电脑）：
-
-```bash
-mllms data prepare-babylm --output-dir data/babylm/raw
-mllms tokenizer train \
-  --input data/babylm/raw/train.txt \
-  --model-prefix artifacts/babylm_tokenizer/tokenizer \
-  --vocab-size 16000 \
-  --input-sentence-size 5000000
-mllms data tokenize \
-  --input-dir data/babylm/raw \
-  --output-dir data/babylm/processed \
-  --tokenizer artifacts/babylm_tokenizer/tokenizer.model \
-  --no-train-token-limit
-```
-
-BabyLM 下载使用官方 `cambridge-climb/BabyLM` cleaned 100M-word strict
-training corpus，以及独立的官方 dev/test。实际 SentencePiece token 数写入
-`data/babylm/processed/token_counts.json`。
-
-## BabyLM 12 层 Colab 训练
-
-```bash
-mllms train --config configs/gpt12_babylm_clone_colab.yaml
-```
-
-配置为 12 layers、8 heads、`d_model=512`、`d_ff=2048`、context 256，
-SentencePiece vocabulary 16000；cloned mapping 后模型 vocabulary 为 32000。
-默认 micro batch 4、gradient accumulation 8，每步仍处理 8192 tokens。
-训练步数会在 tokenization 后根据实际训练 token 数自动计算为 nominal 2 epochs，
-使 original/clone 各自期望获得约一份语料量。输出使用新的 Drive 目录：
+This repository trains one 12-layer decoder-only Transformer on English Wikipedia
+in balanced original/clone token spaces, evaluates subject–verb agreement (SVA) on
+the fixed project-owned controlled suite, and prepares sanity pairs for later
+activation patching.
 
 ```text
-/content/drive/MyDrive/mllms-colab/runs/gpt12_babylm_clone_colab/
+English Wikipedia pretraining
+  → controlled SVA evaluation at multiple checkpoints
+  → joint original/clone sanity-pair selection
+  → activation patching
 ```
 
-恢复训练：
+The controlled SVA suite is evaluation-only and is never mixed into pretraining.
+TinyStories and BabyLM implementations/configs remain as historical references, but
+the active experiment is `gpt12_wikipedia_clone`.
 
-```bash
-mllms train \
-  --config configs/gpt12_babylm_clone_colab.yaml \
-  --resume /content/drive/MyDrive/mllms-colab/runs/gpt12_babylm_clone_colab/latest.pt
-```
-
-## 12 层 Colab 训练
-
-```bash
-mllms train --config configs/gpt12_tinystories_clone_colab.yaml
-```
-
-配置为 12 layers、4 heads、`d_model=256`、`d_ff=1024`、context 256、
-dropout 0.1。基础 SentencePiece vocabulary 为 4096；original/clone 使用独立
-ID 空间，因此模型 vocabulary 为 8192。
-
-每个 optimizer step 处理：
+## Repository structure
 
 ```text
-8 micro batch × 4 accumulation × 256 context = 8,192 tokens
+configs/
+  experiments/gpt12_wikipedia_clone.yaml
+  evaluation/sva_wikipedia.yaml
+  interpretability/activation_patching_wikipedia.yaml
+data/sva/controlled_v1/              # versioned canonical controlled benchmark
+src/mllms/
+  data/wikipedia.py                  # download, deterministic article split
+  data/cloned_language.py            # original/clone ID mapping
+  tokenizer/                         # SentencePiece training and token streams
+  model/                             # unchanged GPT model and hook points
+  training/                          # training, checkpointing, exact resume
+  evaluation/sva/                    # controlled evaluation and sanity selection
+  interpretability/activation_patching/
+  visualization/                    # result-only plots
+scripts/setup_cluster_env.sh
+scripts/train_cluster.sh
+cluster/train.sbatch
+tests/
 ```
 
-约 200M seen tokens 对应 24,415 optimizer steps。checkpoint 和
-`train_log.jsonl` 默认保存在：
+Generated Wikipedia text/token streams, tokenizer models, outputs, logs and model
+checkpoints are ignored by Git. `data/sva/controlled_v1/` is intentionally tracked.
+Its canonical prompts are re-tokenized by the evaluator with the tokenizer supplied
+on the command line, so its older stored token IDs cannot silently contaminate a
+Wikipedia-tokenizer evaluation.
 
-```text
-/content/drive/MyDrive/mllms-colab/runs/gpt12_tinystories_clone_colab/
-```
+## Environment
 
-恢复训练：
+Python 3.10 or newer is required.
 
 ```bash
-mllms train \
-  --config configs/gpt12_tinystories_clone_colab.yaml \
-  --resume /content/drive/MyDrive/mllms-colab/runs/gpt12_tinystories_clone_colab/latest.pt
-```
-
-如果 CUDA OOM，将配置改为 `micro_batch_size: 4`；要继续保持 effective batch
-size 32，同时将 `gradient_accumulation_steps` 改为 8。
-
-## BLiMP
-
-```bash
-RUN_DIR=/content/drive/MyDrive/mllms-colab/runs/gpt12_tinystories_clone_colab
-CHECKPOINT=$RUN_DIR/best.pt
-
-mllms blimp download
-mllms blimp prepare --checkpoint "$CHECKPOINT"
-mllms blimp evaluate \
-  --checkpoint "$CHECKPOINT" \
-  --output-dir "$RUN_DIR/blimp"
-```
-
-查看全部入口：
-
-```bash
+bash scripts/setup_cluster_env.sh
+source .venv/bin/activate
 mllms --help
 ```
 
-BabyLM 模型的严格 one-token verb logit SVA 评估：
+On a managed cluster, load the site-recommended Python/CUDA module first if needed.
+The setup script creates `.venv`, installs `requirements.txt`, installs this project
+editable, and reports whether PyTorch can see CUDA.
+
+## Wikipedia data and tokenizer
+
+The preparation command streams the pinned `wikimedia/wikipedia` English
+`20231101.en` snapshot. It writes whole, hash-disjoint articles until it reaches
+100M train words, 1M validation words and 1M test words. A manifest records the
+resolved dataset revision, license, seed and split statistics.
 
 ```bash
-RUN_DIR=/content/drive/MyDrive/mllms-colab/runs/gpt12_babylm_clone_colab
-TOKENIZER=artifacts/babylm_tokenizer/tokenizer.model
-BLIMP_DATA=data/blimp/processed/babylm_agreement.jsonl
+mllms data prepare-wikipedia --output-dir data/wikipedia/raw
 
-mllms blimp download
-mllms blimp prepare \
-  --checkpoint "$RUN_DIR/best.pt" \
-  --tokenizer "$TOKENIZER" \
-  --output "$BLIMP_DATA"
-mllms blimp evaluate \
-  --checkpoint "$RUN_DIR/best.pt" \
-  --tokenizer "$TOKENIZER" \
-  --data "$BLIMP_DATA" \
-  --scoring verb-logit \
-  --device cuda \
-  --output-dir "$RUN_DIR/blimp_sva_logit"
+mllms tokenizer train \
+  --input data/wikipedia/raw/train.txt \
+  --model-prefix artifacts/wikipedia_tokenizer/tokenizer \
+  --vocab-size 16000 \
+  --input-sentence-size 5000000
+
+mllms data tokenize \
+  --input-dir data/wikipedia/raw \
+  --output-dir data/wikipedia/processed \
+  --tokenizer artifacts/wikipedia_tokenizer/tokenizer.model \
+  --no-train-token-limit
 ```
 
-`verb-logit` 只保留共享前缀且两个候选动词均为单个 SentencePiece token 的
-BLiMP 样本，因此每个样本严格计算
-`logit(correct_verb) - logit(incorrect_verb)`。原有可比评估仍可通过
-`--scoring conditional-logprob` 运行，并建议保存到单独的 `blimp_conditional`
-目录。
+The SentencePiece BPE settings, vocabulary size, original/clone mapping and batch
+construction are unchanged from the BabyLM baseline.
 
-## Colab 查看图表
+## Training and resume
 
-训练结束或中断后生成预训练报告：
-
-```python
-from IPython.display import Image, display
-import pandas as pd
-
-run_dir = (
-    "/content/drive/MyDrive/mllms-colab/"
-    "runs/gpt12_tinystories_clone_colab"
-)
-
-!mllms plot training --run-dir "{run_dir}"
-display(Image(filename=f"{run_dir}/training_report.png"))
-display(pd.read_csv(f"{run_dir}/training_summary.csv"))
+```bash
+mllms train --config configs/experiments/gpt12_wikipedia_clone.yaml
 ```
 
-BLiMP 评估完成后：
+The model, optimizer, batch and context parameters match
+`gpt12_babylm_clone`. The Wikipedia run uses four nominal epochs: with the balanced
+`p_clone: 0.5` mixture, the original and clone token spaces each receive about two
+dataset epochs. Dataset/tokenizer/output paths and the archival interval are also
+experiment-specific. Checkpoints are written atomically as:
 
-```python
-blimp_dir = f"{run_dir}/blimp"
-
-!mllms plot blimp --results-dir "{blimp_dir}"
-display(Image(filename=f"{blimp_dir}/blimp_report.png"))
-display(pd.read_csv(f"{blimp_dir}/blimp_summary.csv"))
+```text
+outputs/runs/gpt12_wikipedia_clone/
+  resolved_config.json
+  train_log.jsonl
+  checkpoints/step_005000.pt
+  checkpoints/step_010000.pt
+  ...
+  best.pt
+  last.pt
 ```
 
-Activation patching 完成后：
+Each checkpoint includes model, optimizer, scheduler and scaler state; global step;
+nominal epoch; latest/best validation loss; token counters; complete config; and
+Python, NumPy, PyTorch and sampling-generator RNG states.
 
-```python
-patching_dir = f"{run_dir}/activation_patching"
-
-!mllms plot patching --results-dir "{patching_dir}"
-display(Image(filename=f"{patching_dir}/patching_report.png"))
-display(pd.read_csv(f"{patching_dir}/patching_top_sites.csv"))
+```bash
+mllms train \
+  --config configs/experiments/gpt12_wikipedia_clone.yaml \
+  --resume outputs/runs/gpt12_wikipedia_clone/checkpoints/step_010000.pt
 ```
 
-三个命令同时生成 CSV 表格：`training_summary.csv`、
-`blimp_summary.csv` 和 `patching_top_sites.csv`。
+`scripts/train_cluster.sh` automatically resumes the newest numbered checkpoint and
+skips a run that already has `last.pt`.
+
+## Controlled SVA
+
+Validate that all fixed prompts can be encoded by the Wikipedia tokenizer:
+
+```bash
+python -c 'from pathlib import Path; from mllms.tokenizer.sentencepiece import load_tokenizer; from mllms.evaluation.sva.pairs import read_pairs; t=load_tokenizer(Path("artifacts/wikipedia_tokenizer/tokenizer.model")); p=read_pairs(Path("data/sva/controlled_v1/test.jsonl"), tokenizer=t); print(f"validated {len(p)} controlled SVA pairs")'
+```
+
+Evaluate any final or intermediate checkpoint:
+
+```bash
+CHECKPOINT=outputs/runs/gpt12_wikipedia_clone/last.pt
+STEP_NAME=$(basename "${CHECKPOINT}" .pt)
+mllms analyze evaluate-sva \
+  --config configs/evaluation/sva_wikipedia.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --output-dir "outputs/evaluation/wikipedia_sva/${STEP_NAME}" \
+  --device cuda
+```
+
+The evaluator reports accuracy, pair accuracy and oriented answer-sequence
+log-probability difference for the original and clone languages across `simple`,
+`pp_attractor`, `object_relative` and `subject_relative`. This reduces exactly to
+the old logit difference for single-token answers and also supports multi-token
+answers. Pairs that pass the joint clean/corrupted criterion in both languages are
+written to `sanity_pairs.jsonl`.
+
+```bash
+mllms plot sva \
+  --results-dir "outputs/evaluation/wikipedia_sva/${STEP_NAME}"
+```
+
+## Tokenizer-aligned SVA v2
+
+The historical `controlled_v1` suite is retained for comparison, but its verb
+answers can become multi-token under the Wikipedia tokenizer. Build the primary
+Wikipedia-aligned suite with the tokenizer used by the model:
+
+```bash
+mllms analyze build-controlled-sva \
+  --config configs/evaluation/sva_wikipedia_v2.yaml
+```
+
+This writes a lexically disjoint 400-pair development split and 3,200-pair test
+split. Every answer is one token and every clean/corrupted prompt has aligned
+token boundaries. Evaluate a checkpoint into a checkpoint-specific directory:
+
+```bash
+mllms analyze evaluate-sva \
+  --config configs/evaluation/sva_wikipedia_v2.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --output-dir "outputs/evaluation/wikipedia_sva_v2/${STEP_NAME}" \
+  --device cuda
+```
+
+## Cross-language activation patching
+
+### Historical within-language baseline
+
+Use the checkpoint-specific sanity set. Patching is deliberately not part of the
+training loop.
+
+```bash
+mllms analyze activation-patching \
+  --config configs/interpretability/activation_patching_wikipedia.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --data "outputs/evaluation/wikipedia_sva/${STEP_NAME}/sanity_pairs.jsonl" \
+  --output-dir "outputs/interpretability/wikipedia_patching/${STEP_NAME}" \
+  --device cuda
+```
+
+Stable hook locations remain visible as `blocks.{layer}.resid_post`,
+`blocks.{layer}.attn_out`, `blocks.{layer}.mlp_out` and
+`blocks.{layer}.head_out`. Plotting only reads saved results:
+
+```bash
+mllms plot patching \
+  --results-dir "outputs/interpretability/wikipedia_patching/${STEP_NAME}" \
+  --language original \
+  --metric recovery
+```
+
+### V2 source-to-target experiments
+
+The v2 runner supports explicit source-to-target directions. Source clean
+activations are inserted into the target corrupted execution, and recovery is
+normalized using the target clean/corrupted LD difference.
+
+```bash
+mllms analyze activation-patching \
+  --config configs/interpretability/activation_patching_wikipedia_v2_confirm.yaml \
+  --checkpoint "${CHECKPOINT}" \
+  --output-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
+  --device cuda
+```
+
+Results are separated as
+`original_to_clone/<control>/`, `clone_to_original/<control>/`, and the two
+within-language positive controls. The confirmatory config scans all heads at
+the prediction position with clean, opposite-number, same-number-shuffled, and
+opposite-number-shuffled source activations. Run the registered L8H3 analysis:
+
+```bash
+mllms analyze patching-statistics \
+  --results-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
+  --data data/sva/controlled_v2/test.jsonl \
+  --output-dir outputs/analysis/wikipedia_cross_language_v2_confirm \
+  --control opposite-number-shuffled \
+  --sites 8:3 \
+  --iterations 10000
+```
+
+For the fixed six-checkpoint trajectory, submit
+`cluster/patch-trajectory-v2-array.sbatch`. Submit
+`cluster/sva-v2-array.sbatch` for the matching behavioral sweep.
+
+## Cluster execution
+
+After preparing the environment and data, submit from the repository root:
+
+```bash
+mkdir -p logs
+sbatch --partition=YOUR_GPU_PARTITION cluster/train.sbatch
+```
+
+The template intentionally leaves the institution-specific partition/account to the
+submission command. Override storage or config without editing it:
+
+```bash
+mkdir -p logs
+sbatch \
+  --partition=YOUR_GPU_PARTITION \
+  --export=ALL,CONFIG=configs/experiments/gpt12_wikipedia_clone.yaml,RUN_DIR=/shared/USER/mllms/gpt12_wikipedia_clone \
+  cluster/train.sbatch
+```
+
+## Tests
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+## Main entry points
+
+- Wikipedia preparation: `src/mllms/data/wikipedia.py`
+- Tokenizer/tokenization: `src/mllms/tokenizer/train.py`, `tokenize.py`
+- Model and hook points: `src/mllms/model/transformer.py`, `components.py`
+- Training: `src/mllms/training/engine.py`
+- Checkpoint/resume: `src/mllms/training/checkpoint.py`
+- Controlled SVA: `src/mllms/evaluation/sva/controlled.py`, `evaluate.py`
+- Patching: `src/mllms/interpretability/activation_patching/runner.py`
+- Visualization: `src/mllms/visualization/`
