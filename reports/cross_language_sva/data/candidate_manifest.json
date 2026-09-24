@@ -1,0 +1,72 @@
+{
+  "status": "frozen_before_test",
+  "selection_data": "outputs/interpretability/wikipedia_cross_language_v2_dev",
+  "selection_checkpoint_sha256": "aa071024c7d778ed3c7cc2aab2c6442d9faf1f9b6b75611301088db389b6ebc1",
+  "selection_dataset_sha256": "6163a226f15be9721bc64818c1626692277a6fccdf12821b2772eaf2a89bb95c",
+  "test_config": "configs/interpretability/activation_patching_wikipedia_v2_confirm.yaml",
+  "test_dataset": "data/sva/controlled_v2/test.jsonl",
+  "test_dataset_sha256": "bf1b06a5ec5757ac4a5faa7a10fbe8174449b88b8362ed66704c40dd44661956",
+  "rule": {
+    "fixed_site": "L8H3",
+    "additional_limit": 5,
+    "ranking": "descending min(original_to_clone, clone_to_original) clean-minus-opposite-number raw delta LD at prediction-position head_out",
+    "eligibility": "strictly positive clean-minus-opposite-number raw delta LD in both cross-language directions"
+  },
+  "sites": [
+    {
+      "site": "L8H3",
+      "layer": 8,
+      "head": 3,
+      "original_to_clone_clean_minus_opposite_number": 0.02343478798866272,
+      "clone_to_original_clean_minus_opposite_number": 0.15275324881076813,
+      "min_cross_language_effect": 0.02343478798866272,
+      "selection": "pre_registered"
+    },
+    {
+      "site": "L10H2",
+      "layer": 10,
+      "head": 2,
+      "original_to_clone_clean_minus_opposite_number": 0.030319111421704292,
+      "clone_to_original_clean_minus_opposite_number": 0.051124535501003265,
+      "min_cross_language_effect": 0.030319111421704292,
+      "selection": "dev_ranked"
+    },
+    {
+      "site": "L9H0",
+      "layer": 9,
+      "head": 0,
+      "original_to_clone_clean_minus_opposite_number": 0.017435558140277863,
+      "clone_to_original_clean_minus_opposite_number": 0.03550546616315842,
+      "min_cross_language_effect": 0.017435558140277863,
+      "selection": "dev_ranked"
+    },
+    {
+      "site": "L11H7",
+      "layer": 11,
+      "head": 7,
+      "original_to_clone_clean_minus_opposite_number": 0.015685008838772774,
+      "clone_to_original_clean_minus_opposite_number": 0.021623441949486732,
+      "min_cross_language_effect": 0.015685008838772774,
+      "selection": "dev_ranked"
+    },
+    {
+      "site": "L8H0",
+      "layer": 8,
+      "head": 0,
+      "original_to_clone_clean_minus_opposite_number": 0.02124105393886566,
+      "clone_to_original_clean_minus_opposite_number": 0.011856645345687866,
+      "min_cross_language_effect": 0.011856645345687866,
+      "selection": "dev_ranked"
+    },
+    {
+      "site": "L11H0",
+      "layer": 11,
+      "head": 0,
+      "original_to_clone_clean_minus_opposite_number": 0.006462584249675274,
+      "clone_to_original_clean_minus_opposite_number": 0.012784899212419987,
+      "min_cross_language_effect": 0.006462584249675274,
+      "selection": "dev_ranked"
+    }
+  ],
+  "selection_provenance": "Frozen before test; checkpoint, dataset and config hashes are retained."
+}

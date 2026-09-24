@@ -3,22 +3,23 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from mllms.evaluation.sva.prepare import parse_args as parse_sva_prepare
 from mllms.evaluation.sva.controlled import parse_args as parse_controlled_sva
+from mllms.evaluation.sva.evaluate import parse_args as parse_sva_evaluate
 from mllms.interpretability.activation_patching.runner import (
     parse_args as parse_patching,
 )
 
 
 class StageConfigTest(unittest.TestCase):
-    def test_sva_defaults_come_from_yaml(self):
-        with patch.object(sys, "argv", ["prepare-sva"]):
-            args = parse_sva_prepare()
-        self.assertEqual(args.num_pairs, 1000)
-        self.assertEqual(args.seed, 42)
+    def test_sva_evaluation_defaults_to_wikipedia_v2(self):
+        with patch.object(
+            sys, "argv", ["evaluate-sva", "--checkpoint", "checkpoint.pt"]
+        ):
+            args = parse_sva_evaluate()
+        self.assertEqual(args.data, Path("data/sva/controlled_v2/test.jsonl"))
         self.assertEqual(
             args.tokenizer,
-            Path("artifacts/babylm_tokenizer/tokenizer.model"),
+            Path("artifacts/wikipedia_tokenizer/tokenizer.model"),
         )
 
     def test_cli_overrides_patching_yaml(self):
@@ -84,8 +85,8 @@ class StageConfigTest(unittest.TestCase):
             args = parse_controlled_sva()
         self.assertEqual(args.test_pairs_per_condition, 800)
         self.assertEqual(args.dev_pairs_per_condition, 100)
-        self.assertEqual(args.output_dir, Path("data/sva/controlled_v1"))
-        self.assertEqual(args.dataset_name, "mllms_controlled_sva_v1")
+        self.assertEqual(args.output_dir, Path("data/sva/controlled_v2"))
+        self.assertEqual(args.dataset_name, "mllms_controlled_sva_v2")
 
     def test_controlled_sva_accepts_an_explicit_dataset_version(self):
         with patch.object(

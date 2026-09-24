@@ -5,7 +5,7 @@ from pathlib import Path
 import sentencepiece as spm
 
 
-TOKENIZER_DIR = Path("artifacts/tokenizer")
+TOKENIZER_DIR = Path("artifacts/wikipedia_tokenizer")
 
 
 def load_tokenizer(

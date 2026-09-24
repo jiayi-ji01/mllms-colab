@@ -1,6 +1,5 @@
-# Wikipedia-only counterpart of gpt12_babylm_clone. Architecture and optimizer
-# settings are unchanged. The run uses four nominal epochs so each half of the
-# balanced original/clone mixture sees about two dataset epochs on average.
+# Primary Wikipedia original/clone experiment. Four nominal epochs give each
+# half of the balanced language mixture about two dataset epochs on average.
 model:
   vocab_size: 16000
   n_layers: 12

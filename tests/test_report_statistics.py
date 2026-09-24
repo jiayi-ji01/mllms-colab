@@ -2,10 +2,7 @@ import unittest
 
 import numpy as np
 
-from mllms.interpretability.activation_patching.report_statistics import (
-    assert_same_ids,
-    paired_intervals,
-)
+from mllms.reporting.statistics import assert_same_ids, paired_intervals
 
 
 class ReportStatisticsTest(unittest.TestCase):

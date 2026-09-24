@@ -1,0 +1,5 @@
+task,test_pairs,patched_pairs,coverage,prompt_clusters
+simple,800,392,0.49,89
+pp_attractor,800,296,0.37,291
+object_relative,800,304,0.38,299
+subject_relative,800,288,0.36,284

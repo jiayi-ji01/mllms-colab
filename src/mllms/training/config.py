@@ -14,32 +14,32 @@ from mllms.config import load_yaml
 class TrainingConfig:
     """Model, data, optimization, and runtime settings."""
 
-    data_dir: str = "data/processed"
-    tokenizer_path: str = "artifacts/tokenizer/tokenizer.model"
-    output_dir: str = "outputs/gpt12_tinystories_clone"
+    data_dir: str = "data/wikipedia/processed"
+    tokenizer_path: str = "artifacts/wikipedia_tokenizer/tokenizer.model"
+    output_dir: str = "outputs/runs/gpt12_wikipedia_clone"
     resume: str | None = None
     device: str = "auto"
     seed: int = 42
     p_clone: float = 0.5
 
-    vocab_size: int = 4096
+    vocab_size: int = 16000
     block_size: int = 256
-    d_model: int = 256
-    n_heads: int = 4
+    d_model: int = 512
+    n_heads: int = 8
     n_layers: int = 12
-    d_ff: int = 1024
+    d_ff: int = 2048
     dropout: float = 0.1
     bias: bool = True
 
-    micro_batch_size: int = 8
-    gradient_accumulation_steps: int = 4
-    target_seen_tokens: int | None = 200_000_000
-    target_epochs: float | None = None
+    micro_batch_size: int = 4
+    gradient_accumulation_steps: int = 8
+    target_seen_tokens: int | None = None
+    target_epochs: float | None = 4.0
     max_steps: int | None = None
     learning_rate: float = 3e-4
     min_learning_rate: float = 3e-5
-    warmup_ratio: float = 0.01
-    warmup_steps: int | None = None
+    warmup_ratio: float = 0.0
+    warmup_steps: int | None = 500
     weight_decay: float = 0.1
     beta1: float = 0.9
     beta2: float = 0.95
@@ -47,8 +47,8 @@ class TrainingConfig:
 
     log_interval: int = 10
     eval_interval: int = 500
-    eval_batches: int = 20
-    checkpoint_interval: int = 1_000
+    eval_batches: int = 40
+    checkpoint_interval: int = 5_000
     early_stopping_patience: int | None = None
 
     def __post_init__(self) -> None:

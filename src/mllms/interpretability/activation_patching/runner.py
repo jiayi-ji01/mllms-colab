@@ -102,7 +102,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--denominator-epsilon", type=float)
     return parse_configured_args(
         parser,
-        Path("configs/interpretability/activation_patching.yaml"),
+        Path(
+            "configs/interpretability/"
+            "activation_patching_wikipedia_v2_confirm.yaml"
+        ),
         ("run",),
     )
 

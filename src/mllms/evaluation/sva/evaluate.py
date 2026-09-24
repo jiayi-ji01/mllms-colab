@@ -107,7 +107,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-sanity-pairs", type=int)
     return parse_configured_args(
         parser,
-        Path("configs/evaluation/sva.yaml"),
+        Path("configs/evaluation/sva_wikipedia_v2.yaml"),
         ("evaluate",),
     )
 
@@ -132,8 +132,7 @@ def main() -> None:
     if mapper.model_vocab_size != model_config.vocab_size:
         raise ValueError("checkpoint and tokenizer vocabulary sizes differ")
 
-    # controlled_v1 stores canonical text as well as its original token IDs.
-    # Re-encode here so the same fixed pairs remain valid for a new tokenizer.
+    # Re-encode canonical text with the tokenizer supplied for this evaluation.
     records = read_pairs(args.data, args.max_pairs, tokenizer=tokenizer)
     language_scores = {}
     rejected = []

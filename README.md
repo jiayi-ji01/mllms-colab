@@ -1,62 +1,44 @@
-# MLLMs: Wikipedia + Cloned-Language GPT
+# Cross-language SVA circuits without shared token IDs
 
-## First report: cross-language SVA (2026-09-24)
+This repository trains a 12-layer decoder-only Transformer on English Wikipedia
+and a cloned language with a disjoint token-ID partition. It then tests whether
+subject-number information transfers causally between the two token spaces.
 
-The [Chinese first report](reports/first_report/report_zh.md) presents the
-best-checkpoint causal-transfer evidence and six-checkpoint trajectory. The
-[executed notebook](notebooks/cross_language_dashboard.ipynb) regenerates English
-figures from portable compact results, without checkpoints or activation arrays.
-See the [evidence-pack instructions](reports/first_report/README.md) for reproduction,
-provenance and the distinction between full-test behavior and fixed-cohort patching.
-
-This repository trains one 12-layer decoder-only Transformer on English Wikipedia
-in balanced original/clone token spaces, evaluates subject–verb agreement (SVA) on
-the fixed project-owned controlled suite, and prepares sanity pairs for later
-activation patching.
+The primary result is a bidirectional, asymmetric transfer effect at attention
+head L8H3. The full Chinese report is in
+[`reports/cross_language_sva/report_zh.md`](reports/cross_language_sva/report_zh.md),
+and the plotting notebook is
+[`notebooks/cross_language_dashboard.ipynb`](notebooks/cross_language_dashboard.ipynb).
 
 ```text
-English Wikipedia pretraining
-  → controlled SVA evaluation at multiple checkpoints
-  → joint original/clone sanity-pair selection
-  → activation patching
+Wikipedia preparation
+  → original/clone language-model training
+  → controlled SVA v2 evaluation
+  → four-direction activation patching
+  → paired trajectory statistics and report figures
 ```
 
-The controlled SVA suite is evaluation-only and is never mixed into pretraining.
-TinyStories and BabyLM implementations/configs remain as historical references, but
-the active experiment is `gpt12_wikipedia_clone`.
-
-## Repository structure
+## Repository contents
 
 ```text
-configs/
-  experiments/gpt12_wikipedia_clone.yaml
-  evaluation/sva_wikipedia.yaml
-  interpretability/activation_patching_wikipedia.yaml
-data/sva/controlled_v1/              # versioned canonical controlled benchmark
-src/mllms/
-  data/wikipedia.py                  # download, deterministic article split
-  data/cloned_language.py            # original/clone ID mapping
-  tokenizer/                         # SentencePiece training and token streams
-  model/                             # unchanged GPT model and hook points
-  training/                          # training, checkpointing, exact resume
-  evaluation/sva/                    # controlled evaluation and sanity selection
-  interpretability/activation_patching/
-  visualization/                    # result-only plots
-scripts/setup_cluster_env.sh
-scripts/train_cluster.sh
-cluster/train.sbatch
-tests/
+configs/                         Current training, SVA and patching configurations
+data/sva/controlled_v2/          Versioned dev/test evaluation pairs and metadata
+src/mllms/                       Training, evaluation and interpretability package
+scripts/                         Cluster setup, execution and report construction
+cluster/                         Slurm entry points for the recorded experiment
+tests/                           Unit and interface tests
+notebooks/cross_language_dashboard.ipynb
+reports/cross_language_sva/      Report, compact evidence tables and PNG figures
+docs/experiment_log.md           Public experiment decisions and limitations
 ```
 
-Generated Wikipedia text/token streams, tokenizer models, outputs, logs and model
-checkpoints are ignored by Git. `data/sva/controlled_v1/` is intentionally tracked.
-Its canonical prompts are re-tokenized by the evaluator with the tokenizer supplied
-on the command line, so its older stored token IDs cannot silently contaminate a
-Wikipedia-tokenizer evaluation.
+Generated corpora, tokenizer files, checkpoints, per-example activation arrays,
+logs and local caches are intentionally excluded from Git.
 
 ## Environment
 
-Python 3.10 or newer is required.
+Python 3.10 or newer is required. The setup script installs the pinned cluster
+dependencies and this package in editable mode:
 
 ```bash
 bash scripts/setup_cluster_env.sh
@@ -64,19 +46,52 @@ source .venv/bin/activate
 mllms --help
 ```
 
-On a managed cluster, load the site-recommended Python/CUDA module first if needed.
-The setup script creates `.venv`, installs `requirements.txt`, installs this project
-editable, and reports whether PyTorch can see CUDA.
-
-## Wikipedia data and tokenizer
-
-The preparation command streams the pinned `wikimedia/wikipedia` English
-`20231101.en` snapshot. It writes whole, hash-disjoint articles until it reaches
-100M train words, 1M validation words and 1M test words. A manifest records the
-resolved dataset revision, license, seed and split statistics.
+For notebook execution, install the reporting extra:
 
 ```bash
-mllms data prepare-wikipedia --output-dir data/wikipedia/raw
+python -m pip install -e '.[report]'
+```
+
+## Reproduction levels
+
+### 1. Inspect the reported evidence
+
+The tracked compact CSV/JSON files are sufficient to inspect every reported
+number and redraw all ten figures. They do not require model checkpoints or raw
+activation arrays.
+
+```bash
+python -m nbconvert \
+  --to notebook \
+  --execute notebooks/cross_language_dashboard.ipynb \
+  --output /tmp/cross_language_dashboard.executed.ipynb
+```
+
+The notebook verifies the compact-file hashes recorded in
+`reports/cross_language_sva/data/manifest.json` before plotting.
+
+### 2. Rebuild the compact statistics
+
+This requires locally generated checkpoints, tokenizer, SVA evaluations and raw
+patching outputs at the paths recorded in the configs:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+  python scripts/build_report.py
+```
+
+The builder validates checkpoint, tokenizer and dataset hashes; verifies the
+fixed 1,280-pair cohort at every checkpoint; and rejects missing, duplicate or
+reordered sample IDs.
+
+### 3. Re-run the complete experiment
+
+Prepare the pinned Wikipedia snapshot and tokenizer:
+
+```bash
+mllms data prepare-wikipedia \
+  --output-dir data/wikipedia/raw \
+  --revision e6057dc557255a03c9c3c47ceab0eb44353b1bc5
 
 mllms tokenizer train \
   --input data/wikipedia/raw/train.txt \
@@ -91,179 +106,57 @@ mllms data tokenize \
   --no-train-token-limit
 ```
 
-The SentencePiece BPE settings, vocabulary size, original/clone mapping and batch
-construction are unchanged from the BabyLM baseline.
-
-## Training and resume
+Train and build the controlled evaluation data:
 
 ```bash
 mllms train --config configs/experiments/gpt12_wikipedia_clone.yaml
-```
 
-The model, optimizer, batch and context parameters match
-`gpt12_babylm_clone`. The Wikipedia run uses four nominal epochs: with the balanced
-`p_clone: 0.5` mixture, the original and clone token spaces each receive about two
-dataset epochs. Dataset/tokenizer/output paths and the archival interval are also
-experiment-specific. Checkpoints are written atomically as:
-
-```text
-outputs/runs/gpt12_wikipedia_clone/
-  resolved_config.json
-  train_log.jsonl
-  checkpoints/step_005000.pt
-  checkpoints/step_010000.pt
-  ...
-  best.pt
-  last.pt
-```
-
-Each checkpoint includes model, optimizer, scheduler and scaler state; global step;
-nominal epoch; latest/best validation loss; token counters; complete config; and
-Python, NumPy, PyTorch and sampling-generator RNG states.
-
-```bash
-mllms train \
-  --config configs/experiments/gpt12_wikipedia_clone.yaml \
-  --resume outputs/runs/gpt12_wikipedia_clone/checkpoints/step_010000.pt
-```
-
-`scripts/train_cluster.sh` automatically resumes the newest numbered checkpoint and
-skips a run that already has `last.pt`.
-
-## Controlled SVA
-
-Validate that all fixed prompts can be encoded by the Wikipedia tokenizer:
-
-```bash
-python -c 'from pathlib import Path; from mllms.tokenizer.sentencepiece import load_tokenizer; from mllms.evaluation.sva.pairs import read_pairs; t=load_tokenizer(Path("artifacts/wikipedia_tokenizer/tokenizer.model")); p=read_pairs(Path("data/sva/controlled_v1/test.jsonl"), tokenizer=t); print(f"validated {len(p)} controlled SVA pairs")'
-```
-
-Evaluate any final or intermediate checkpoint:
-
-```bash
-CHECKPOINT=outputs/runs/gpt12_wikipedia_clone/last.pt
-STEP_NAME=$(basename "${CHECKPOINT}" .pt)
-mllms analyze evaluate-sva \
-  --config configs/evaluation/sva_wikipedia.yaml \
-  --checkpoint "${CHECKPOINT}" \
-  --output-dir "outputs/evaluation/wikipedia_sva/${STEP_NAME}" \
-  --device cuda
-```
-
-The evaluator reports accuracy, pair accuracy and oriented answer-sequence
-log-probability difference for the original and clone languages across `simple`,
-`pp_attractor`, `object_relative` and `subject_relative`. This reduces exactly to
-the old logit difference for single-token answers and also supports multi-token
-answers. Pairs that pass the joint clean/corrupted criterion in both languages are
-written to `sanity_pairs.jsonl`.
-
-```bash
-mllms plot sva \
-  --results-dir "outputs/evaluation/wikipedia_sva/${STEP_NAME}"
-```
-
-## Tokenizer-aligned SVA v2
-
-The historical `controlled_v1` suite is retained for comparison, but its verb
-answers can become multi-token under the Wikipedia tokenizer. Build the primary
-Wikipedia-aligned suite with the tokenizer used by the model:
-
-```bash
 mllms analyze build-controlled-sva \
   --config configs/evaluation/sva_wikipedia_v2.yaml
 ```
 
-This writes a lexically disjoint 400-pair development split and 3,200-pair test
-split. Every answer is one token and every clean/corrupted prompt has aligned
-token boundaries. Evaluate a checkpoint into a checkpoint-specific directory:
+Evaluate a checkpoint and run the confirmatory patching configuration:
 
 ```bash
+CHECKPOINT=outputs/runs/gpt12_wikipedia_clone/best.pt
+
 mllms analyze evaluate-sva \
   --config configs/evaluation/sva_wikipedia_v2.yaml \
-  --checkpoint "${CHECKPOINT}" \
-  --output-dir "outputs/evaluation/wikipedia_sva_v2/${STEP_NAME}" \
+  --checkpoint "$CHECKPOINT" \
+  --output-dir outputs/evaluation/wikipedia_sva_v2/best \
   --device cuda
-```
 
-## Cross-language activation patching
-
-### Historical within-language baseline
-
-Use the checkpoint-specific sanity set. Patching is deliberately not part of the
-training loop.
-
-```bash
-mllms analyze activation-patching \
-  --config configs/interpretability/activation_patching_wikipedia.yaml \
-  --checkpoint "${CHECKPOINT}" \
-  --data "outputs/evaluation/wikipedia_sva/${STEP_NAME}/sanity_pairs.jsonl" \
-  --output-dir "outputs/interpretability/wikipedia_patching/${STEP_NAME}" \
-  --device cuda
-```
-
-Stable hook locations remain visible as `blocks.{layer}.resid_post`,
-`blocks.{layer}.attn_out`, `blocks.{layer}.mlp_out` and
-`blocks.{layer}.head_out`. Plotting only reads saved results:
-
-```bash
-mllms plot patching \
-  --results-dir "outputs/interpretability/wikipedia_patching/${STEP_NAME}" \
-  --language original \
-  --metric recovery
-```
-
-### V2 source-to-target experiments
-
-The v2 runner supports explicit source-to-target directions. Source clean
-activations are inserted into the target corrupted execution, and recovery is
-normalized using the target clean/corrupted LD difference.
-
-```bash
 mllms analyze activation-patching \
   --config configs/interpretability/activation_patching_wikipedia_v2_confirm.yaml \
-  --checkpoint "${CHECKPOINT}" \
+  --checkpoint "$CHECKPOINT" \
   --output-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
   --device cuda
 ```
 
-Results are separated as
-`original_to_clone/<control>/`, `clone_to_original/<control>/`, and the two
-within-language positive controls. The confirmatory config scans all heads at
-the prediction position with clean, opposite-number, same-number-shuffled, and
-opposite-number-shuffled source activations. Run the registered L8H3 analysis:
+The Slurm entry points reproduce the recorded large runs:
 
-```bash
-mllms analyze patching-statistics \
-  --results-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
-  --data data/sva/controlled_v2/test.jsonl \
-  --output-dir outputs/analysis/wikipedia_cross_language_v2_confirm \
-  --control opposite-number-shuffled \
-  --sites 8:3 \
-  --iterations 10000
-```
+- `cluster/prepare-wikipedia.sbatch`
+- `cluster/train.sbatch`
+- `cluster/sva-v2-array.sbatch`
+- `cluster/patch-trajectory-v2-array.sbatch`
+- `cluster/analyze-v2.sbatch`, parameterized through `STAGE`
 
-For the fixed six-checkpoint trajectory, submit
-`cluster/patch-trajectory-v2-array.sbatch`. Submit
-`cluster/sva-v2-array.sbatch` for the matching behavioral sweep.
+Large artifacts are not distributed with this repository. Reproducing the
+reported numerical results from scratch therefore requires retraining the model.
 
-## Cluster execution
+## Main command interface
 
-After preparing the environment and data, submit from the repository root:
-
-```bash
-mkdir -p logs
-sbatch --partition=YOUR_GPU_PARTITION cluster/train.sbatch
-```
-
-The template intentionally leaves the institution-specific partition/account to the
-submission command. Override storage or config without editing it:
-
-```bash
-mkdir -p logs
-sbatch \
-  --partition=YOUR_GPU_PARTITION \
-  --export=ALL,CONFIG=configs/experiments/gpt12_wikipedia_clone.yaml,RUN_DIR=/shared/USER/mllms/gpt12_wikipedia_clone \
-  cluster/train.sbatch
+```text
+mllms data prepare-wikipedia
+mllms data tokenize
+mllms tokenizer train
+mllms train --config CONFIG
+mllms analyze build-controlled-sva
+mllms analyze evaluate-sva
+mllms analyze sanity-check
+mllms analyze activation-patching
+mllms analyze patching-statistics
+mllms plot training|sva|patching
 ```
 
 ## Tests
@@ -272,13 +165,6 @@ sbatch \
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-## Main entry points
-
-- Wikipedia preparation: `src/mllms/data/wikipedia.py`
-- Tokenizer/tokenization: `src/mllms/tokenizer/train.py`, `tokenize.py`
-- Model and hook points: `src/mllms/model/transformer.py`, `components.py`
-- Training: `src/mllms/training/engine.py`
-- Checkpoint/resume: `src/mllms/training/checkpoint.py`
-- Controlled SVA: `src/mllms/evaluation/sva/controlled.py`, `evaluate.py`
-- Patching: `src/mllms/interpretability/activation_patching/runner.py`
-- Visualization: `src/mllms/visualization/`
+The tests cover cloned-token mapping, training/checkpoint invariants, controlled
+SVA generation and scoring, source-to-target patching, controls, paired
+statistics, configuration defaults and the public command interface.

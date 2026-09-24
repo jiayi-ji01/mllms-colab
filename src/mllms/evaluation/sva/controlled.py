@@ -387,7 +387,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int)
     return parse_configured_args(
         parser,
-        Path("configs/evaluation/sva.yaml"),
+        Path("configs/evaluation/sva_wikipedia_v2.yaml"),
         ("controlled",),
     )
 
@@ -430,7 +430,6 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(args.output_dir / "dev.jsonl", dev_records)
     _write_jsonl(args.output_dir / "test.jsonl", test_records)
-    _write_jsonl(args.output_dir / "all.jsonl", [*dev_records, *test_records])
     metadata = {
         "dataset": args.dataset_name,
         "config": str(args.config),

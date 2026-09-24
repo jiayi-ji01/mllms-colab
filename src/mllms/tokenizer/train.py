@@ -12,7 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-prefix",
         type=Path,
-        default=Path("artifacts/tokenizer/tokenizer"),
+        default=Path("artifacts/wikipedia_tokenizer/tokenizer"),
     )
     parser.add_argument("--vocab-size", type=int, default=4096)
     parser.add_argument(

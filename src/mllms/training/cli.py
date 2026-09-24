@@ -11,7 +11,7 @@ from mllms.training.engine import train
 
 def parse_args() -> TrainingConfig:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path)
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--data-dir")
     parser.add_argument("--tokenizer-path")
     parser.add_argument("--output-dir")
@@ -33,11 +33,7 @@ def parse_args() -> TrainingConfig:
     values = vars(parser.parse_args())
 
     config_path = values.pop("config")
-    config = (
-        load_training_config(config_path)
-        if config_path is not None
-        else TrainingConfig()
-    )
+    config = load_training_config(config_path)
     overrides = {key: value for key, value in values.items() if value is not None}
     if not overrides:
         return config

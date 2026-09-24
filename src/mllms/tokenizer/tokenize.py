@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tokenizer",
         type=Path,
-        default=Path("artifacts/tokenizer/tokenizer.model"),
+        default=Path("artifacts/wikipedia_tokenizer/tokenizer.model"),
     )
     parser.add_argument(
         "--target-train-tokens",
