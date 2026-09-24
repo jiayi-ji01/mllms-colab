@@ -1,5 +1,5 @@
 # On managed clusters, install a site-specific CUDA build first if required.
-torch>=2.2
+torch==2.7.1
 datasets==5.0.1
 huggingface_hub>=0.27
 matplotlib==3.11.1

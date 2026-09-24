@@ -1,5 +1,14 @@
 # MLLMs: Wikipedia + Cloned-Language GPT
 
+## First report: cross-language SVA (2026-09-24)
+
+The [Chinese first report](reports/first_report/report_zh.md) presents the
+best-checkpoint causal-transfer evidence and six-checkpoint trajectory. The
+[executed notebook](notebooks/cross_language_dashboard.ipynb) regenerates English
+figures from portable compact results, without checkpoints or activation arrays.
+See the [evidence-pack instructions](reports/first_report/README.md) for reproduction,
+provenance and the distinction between full-test behavior and fixed-cohort patching.
+
 This repository trains one 12-layer decoder-only Transformer on English Wikipedia
 in balanced original/clone token spaces, evaluates subject–verb agreement (SVA) on
 the fixed project-owned controlled suite, and prepares sanity pairs for later

@@ -13,6 +13,7 @@ mllms = "mllms.cli:main"
 
 [project.optional-dependencies]
 book = ["jupyter-book>=2,<3"]
+report = ["numpy", "matplotlib", "nbformat", "nbconvert", "ipykernel", "mistune>=3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
