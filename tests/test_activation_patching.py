@@ -2,13 +2,13 @@ import unittest
 
 import torch
 
-from mllms.interpretability.activation_patching.interventions import patch_batch
-from mllms.interpretability.activation_patching.runner import (
+from patching import patch_batch
+from run_patching import (
     _select_fixed_records,
     build_control_sources,
 )
-from mllms.model.config import GPTConfig
-from mllms.model.transformer import GPT
+from model import GPTConfig
+from model import GPT
 
 
 class ActivationPatchingTest(unittest.TestCase):

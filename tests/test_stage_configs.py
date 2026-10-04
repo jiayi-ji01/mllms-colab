@@ -3,9 +3,9 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from mllms.evaluation.sva.controlled import parse_args as parse_controlled_sva
-from mllms.evaluation.sva.evaluate import parse_args as parse_sva_evaluate
-from mllms.interpretability.activation_patching.runner import (
+from build_sva import parse_args as parse_controlled_sva
+from evaluate_sva import parse_args as parse_sva_evaluate
+from run_patching import (
     parse_args as parse_patching,
 )
 

@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from mllms.data.cloned_language import ClonedMapper
+from token_data import ClonedMapper
 
 
 class ClonedLanguageTest(unittest.TestCase):

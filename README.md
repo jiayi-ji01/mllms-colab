@@ -1,21 +1,20 @@
-# Cross-language SVA circuits without shared token IDs
+# Cross-language SVA information transfer
 
 This repository trains a 12-layer decoder-only Transformer on English Wikipedia
 and a cloned language with a disjoint token-ID partition. It then tests whether
 subject-number information transfers causally between the two token spaces.
 
 The primary result is a bidirectional, asymmetric transfer effect at attention
-head L8H3. The full Chinese report is in
-[`reports/cross_language_sva/report_zh.md`](reports/cross_language_sva/report_zh.md),
-and the plotting notebook is
-[`notebooks/cross_language_dashboard.ipynb`](notebooks/cross_language_dashboard.ipynb).
+head L8H3. The [compact evidence](evidence/cross_language_sva/README.md) and
+[plotting notebook](notebooks/cross_language_dashboard.ipynb) support inspection
+and redrawing of the reported results.
 
 ```text
 Wikipedia preparation
   → original/clone language-model training
   → controlled SVA v2 evaluation
   → four-direction activation patching
-  → paired trajectory statistics and report figures
+  → paired statistical analysis
 ```
 
 ## Repository contents
@@ -23,33 +22,31 @@ Wikipedia preparation
 ```text
 configs/                         Current training, SVA and patching configurations
 data/sva/controlled_v2/          Versioned dev/test evaluation pairs and metadata
-src/mllms/                       Training, evaluation and interpretability package
-scripts/                         Cluster setup, execution and report construction
-cluster/                         Slurm entry points for the recorded experiment
+scripts/                         Experiment and analysis entry points
 tests/                           Unit and interface tests
 notebooks/cross_language_dashboard.ipynb
-reports/cross_language_sva/      Report, compact evidence tables and PNG figures
+evidence/cross_language_sva/     Compact result tables and provenance
 docs/experiment_log.md           Public experiment decisions and limitations
 ```
 
-Generated corpora, tokenizer files, checkpoints, per-example activation arrays,
-logs and local caches are intentionally excluded from Git.
+Reports, paper drafts, cluster submission files, generated corpora, tokenizer
+files, checkpoints, per-example activation arrays, logs and caches stay local.
 
 ## Environment
 
-Python 3.10 or newer is required. The setup script installs the pinned cluster
-dependencies and this package in editable mode:
+Python 3.10 or newer is required. Run commands from the repository root:
 
 ```bash
-bash scripts/setup_cluster_env.sh
+python3 -m venv .venv
 source .venv/bin/activate
-mllms --help
+python -m pip install -r requirements.txt
+python scripts/train.py --help
 ```
 
-For notebook execution, install the reporting extra:
+For notebook execution, install these additional dependencies:
 
 ```bash
-python -m pip install -e '.[report]'
+python -m pip install "matplotlib==3.11.1" "nbformat>=5,<6" "nbconvert>=7,<8" "ipykernel>=6,<7"
 ```
 
 ## Reproduction levels
@@ -68,38 +65,30 @@ python -m nbconvert \
 ```
 
 The notebook verifies the compact-file hashes recorded in
-`reports/cross_language_sva/data/manifest.json` before plotting.
+[`evidence/cross_language_sva/data/manifest.json`](evidence/cross_language_sva/data/manifest.json)
+before plotting. It writes PNG files to an ignored local reports directory.
 
-### 2. Rebuild the compact statistics
+### 2. Re-run the experiment through statistical analysis
 
-This requires locally generated checkpoints, tokenizer, SVA evaluations and raw
-patching outputs at the paths recorded in the configs:
-
-```bash
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
-  python scripts/build_report.py
-```
-
-The builder validates checkpoint, tokenizer and dataset hashes; verifies the
-fixed 1,280-pair cohort at every checkpoint; and rejects missing, duplicate or
-reordered sample IDs.
-
-### 3. Re-run the complete experiment
+The compact evidence and plotting notebook are retained as recorded results.
+The notebook redraws figures from those tables. Use the commands below to
+recreate numerical results with the current scripts. The old `mllms` command
+and Python package are retired.
 
 Prepare the pinned Wikipedia snapshot and tokenizer:
 
 ```bash
-mllms data prepare-wikipedia \
+python scripts/prepare_wikipedia.py \
   --output-dir data/wikipedia/raw \
   --revision e6057dc557255a03c9c3c47ceab0eb44353b1bc5
 
-mllms tokenizer train \
+python scripts/train_tokenizer.py \
   --input data/wikipedia/raw/train.txt \
   --model-prefix artifacts/wikipedia_tokenizer/tokenizer \
   --vocab-size 16000 \
   --input-sentence-size 5000000
 
-mllms data tokenize \
+python scripts/tokenize_data.py \
   --input-dir data/wikipedia/raw \
   --output-dir data/wikipedia/processed \
   --tokenizer artifacts/wikipedia_tokenizer/tokenizer.model \
@@ -109,9 +98,9 @@ mllms data tokenize \
 Train and build the controlled evaluation data:
 
 ```bash
-mllms train --config configs/experiments/gpt12_wikipedia_clone.yaml
+python scripts/train.py --config configs/experiments/gpt12_wikipedia_clone.yaml
 
-mllms analyze build-controlled-sva \
+python scripts/build_sva.py \
   --config configs/evaluation/sva_wikipedia_v2.yaml
 ```
 
@@ -120,26 +109,36 @@ Evaluate a checkpoint and run the confirmatory patching configuration:
 ```bash
 CHECKPOINT=outputs/runs/gpt12_wikipedia_clone/best.pt
 
-mllms analyze evaluate-sva \
+python scripts/evaluate_sva.py \
   --config configs/evaluation/sva_wikipedia_v2.yaml \
   --checkpoint "$CHECKPOINT" \
   --output-dir outputs/evaluation/wikipedia_sva_v2/best \
   --device cuda
 
-mllms analyze activation-patching \
+python scripts/run_patching.py \
   --config configs/interpretability/activation_patching_wikipedia_v2_confirm.yaml \
   --checkpoint "$CHECKPOINT" \
   --output-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
   --device cuda
 ```
 
-The Slurm entry points reproduce the recorded large runs:
+Evaluate held-out perplexity and compare patching effects with controls:
 
-- `cluster/prepare-wikipedia.sbatch`
-- `cluster/train.sbatch`
-- `cluster/sva-v2-array.sbatch`
-- `cluster/patch-trajectory-v2-array.sbatch`
-- `cluster/analyze-v2.sbatch`, parameterized through `STAGE`
+```bash
+python scripts/evaluate_lm.py \
+  --checkpoint "$CHECKPOINT" \
+  --config configs/experiments/gpt12_wikipedia_clone.yaml \
+  --split test --full-validation --device cuda
+
+python scripts/patching_statistics.py \
+  --results-dir outputs/interpretability/wikipedia_cross_language_v2_confirm \
+  --data data/sva/controlled_v2/test.jsonl \
+  --output-dir outputs/interpretability/wikipedia_cross_language_v2_statistics \
+  --iterations 10000 --seed 42
+```
+
+The loss/perplexity CSV fields and `sanity_check_summary.json` filename are retained.
+Prediction examples and random-model comparisons are no longer produced.
 
 Large artifacts are not distributed with this repository. Reproducing the
 reported numerical results from scratch therefore requires retraining the model.
@@ -147,22 +146,21 @@ reported numerical results from scratch therefore requires retraining the model.
 ## Main command interface
 
 ```text
-mllms data prepare-wikipedia
-mllms data tokenize
-mllms tokenizer train
-mllms train --config CONFIG
-mllms analyze build-controlled-sva
-mllms analyze evaluate-sva
-mllms analyze sanity-check
-mllms analyze activation-patching
-mllms analyze patching-statistics
-mllms plot training|sva|patching
+python scripts/prepare_wikipedia.py
+python scripts/tokenize_data.py
+python scripts/train_tokenizer.py
+python scripts/train.py --config CONFIG
+python scripts/build_sva.py
+python scripts/evaluate_sva.py
+python scripts/evaluate_lm.py
+python scripts/run_patching.py
+python scripts/patching_statistics.py
 ```
 
 ## Tests
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+PYTHONPATH=scripts python -m unittest discover -s tests -v
 ```
 
 The tests cover cloned-token mapping, training/checkpoint invariants, controlled

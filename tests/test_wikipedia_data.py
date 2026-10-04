@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from mllms.data.wikipedia import choose_split, normalize_article, prepare_rows
+from prepare_wikipedia import choose_split, normalize_article, prepare_rows
 
 
 class WikipediaDataTest(unittest.TestCase):

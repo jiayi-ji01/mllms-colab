@@ -1,7 +1,8 @@
+from dataclasses import asdict
 from pathlib import Path
 import unittest
 
-from mllms.training.config import load_training_config
+from config import TrainingConfig, load_training_config
 
 
 class TrainingConfigTest(unittest.TestCase):
@@ -25,3 +26,14 @@ class TrainingConfigTest(unittest.TestCase):
         self.assertEqual(config.warmup_steps, 500)
         self.assertEqual(config.checkpoint_interval, 5000)
         self.assertEqual(config.output_dir, "outputs/runs/gpt12_wikipedia_clone")
+
+    def test_model_config_uses_both_token_spaces_and_architecture_settings(self):
+        training = TrainingConfig(
+            vocab_size=17, block_size=8, d_model=24, n_heads=3,
+            n_layers=2, d_ff=48, dropout=0.2, bias=False,
+        )
+        self.assertEqual(asdict(training.model_config()), {
+            "vocab_size": 34, "block_size": 8, "d_model": 24, "n_heads": 3,
+            "n_layers": 2, "d_ff": 48, "dropout": 0.2, "bias": False,
+        })
+        self.assertNotIn("model_config", asdict(training))

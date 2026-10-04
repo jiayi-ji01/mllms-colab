@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from mllms.interpretability.activation_patching.metrics import site_scores
+from patching import site_scores
 
 
 class PatchingMetricsTest(unittest.TestCase):

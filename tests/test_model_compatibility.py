@@ -3,9 +3,9 @@ import unittest
 
 import torch
 
-from mllms.model.config import GPTConfig
-from mllms.model.loading import load_model_checkpoint
-from mllms.model.transformer import GPT
+from model import GPTConfig
+from checkpoint import load_model_checkpoint
+from model import GPT
 
 
 class ModelCompatibilityTest(unittest.TestCase):

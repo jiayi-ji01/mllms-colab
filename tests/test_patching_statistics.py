@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from mllms.interpretability.activation_patching.statistics import (
+from patching_statistics import (
     holm_adjust,
     stratified_paired_bootstrap,
 )

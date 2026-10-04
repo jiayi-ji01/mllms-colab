@@ -37,10 +37,12 @@ logs/
 # Notebook execution state
 .ipynb_checkpoints/
 
-# Rebuildable report exports
-/reports/cross_language_sva/dashboard.html
-/reports/cross_language_sva/report_zh.html
-/reports/cross_language_sva/figures/*.pdf
+# Local reports, paper drafts, and cluster submission files
+/reports/
+/cluster/
+/scripts/setup_cluster_env.sh
+/scripts/train_cluster.sh
+/scripts/run_v2_analysis.sh
 
 # Locally exported experiment results
 /output/

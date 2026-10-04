@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from mllms.reporting.statistics import assert_same_ids, paired_intervals
+from patching_statistics import assert_same_ids, paired_intervals
 
 
 class ReportStatisticsTest(unittest.TestCase):

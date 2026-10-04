@@ -1,6 +1,6 @@
 import unittest
 
-from mllms.evaluation.sva.controlled import generate_split, make_record
+from build_sva import generate_split, make_record
 
 
 class FakeTokenizer:

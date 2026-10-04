@@ -2,13 +2,13 @@ import unittest
 
 import torch
 
-from mllms.evaluation.sva.scoring import (
+from sva import (
     final_logit_difference,
     sequence_log_probability_difference,
     summarize_scores,
 )
-from mllms.model.config import GPTConfig
-from mllms.model.transformer import GPT
+from model import GPTConfig
+from model import GPT
 
 
 class SVAScoringTest(unittest.TestCase):

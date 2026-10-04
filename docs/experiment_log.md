@@ -116,7 +116,7 @@ time.
 
 ## Reproducibility record
 
-The compact evidence, hashes, statistics and figures are versioned in
-`reports/cross_language_sva/`. Raw checkpoints and activation arrays are locally
-generated artifacts and are excluded from Git. The exact commands and three
-reproduction levels are documented in the repository README.
+The compact evidence and its hashes are versioned in
+`evidence/cross_language_sva/data/`. The plotting notebook redraws figures
+locally. Reports, checkpoints and activation arrays remain outside Git. The
+repository README documents the available reproduction commands.
