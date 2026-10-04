@@ -1,11 +1,16 @@
-# Cross-language SVA information transfer
+# Cross-Language Transfer of Subject–Verb Agreement Information in a Shared Model
 
-This repository trains a 12-layer decoder-only Transformer on English Wikipedia
-and a cloned language with a disjoint token-ID partition. It then tests whether
-subject-number information transfers causally between the two token spaces.
+Companion code and compact evidence for the paper of the same title. A single
+12-layer decoder-only Transformer is jointly trained on English Wikipedia and
+a cloned language. The clone preserves English sentence structure while using
+separate vocabulary token IDs. Activation patching tests whether information
+from one language can affect subject–verb agreement (SVA) in the other.
 
-The primary result is a bidirectional, asymmetric transfer effect at attention
-head L8H3. The [compact evidence](evidence/cross_language_sva/README.md) and
+The primary result is a bidirectional, asymmetric effect at attention head
+L8H3, with differences across sentence structures and training checkpoints.
+This supports local use of SVA information across languages in this model;
+it does not establish a complete shared circuit. The
+[compact evidence](evidence/cross_language_sva/README.md) and
 [plotting notebook](notebooks/cross_language_dashboard.ipynb) support inspection
 and redrawing of the reported results.
 
@@ -29,12 +34,14 @@ evidence/cross_language_sva/     Compact result tables and provenance
 docs/experiment_log.md           Public experiment decisions and limitations
 ```
 
-Reports, paper drafts, cluster submission files, generated corpora, tokenizer
-files, checkpoints, per-example activation arrays, logs and caches stay local.
+The paper PDF is submitted separately. Reports, paper drafts, cluster submission
+files, generated corpora, tokenizer files, checkpoints, per-example activation
+arrays, logs and caches stay local and are excluded from Git.
 
 ## Environment
 
-Python 3.10 or newer is required. Run commands from the repository root:
+Use Python 3.11 or newer for the experiment and the pinned plotting dependencies.
+Run commands from the repository root:
 
 ```bash
 python3 -m venv .venv
@@ -61,19 +68,21 @@ activation arrays.
 python -m nbconvert \
   --to notebook \
   --execute notebooks/cross_language_dashboard.ipynb \
-  --output /tmp/cross_language_dashboard.executed.ipynb
+  --output cross_language_dashboard.executed.ipynb \
+  --output-dir /tmp
 ```
 
 The notebook verifies the compact-file hashes recorded in
 [`evidence/cross_language_sva/data/manifest.json`](evidence/cross_language_sva/data/manifest.json)
 before plotting. It writes PNG files to an ignored local reports directory.
 
-### 2. Re-run the experiment through statistical analysis
+### 2. Re-run training, evaluation and patching
 
 The compact evidence and plotting notebook are retained as recorded results.
 The notebook redraws figures from those tables. Use the commands below to
-recreate numerical results with the current scripts. The old `mllms` command
-and Python package are retired.
+run the experiment with the current standalone scripts. The evidence manifests
+identify the original analysis version through file hashes; see the
+[provenance notes](evidence/cross_language_sva/README.md).
 
 Prepare the pinned Wikipedia snapshot and tokenizer:
 
@@ -137,8 +146,30 @@ python scripts/patching_statistics.py \
   --iterations 10000 --seed 42
 ```
 
-The loss/perplexity CSV fields and `sanity_check_summary.json` filename are retained.
-Prediction examples and random-model comparisons are no longer produced.
+The statistics command compares clean patching with an opposite-number control
+at L8H3 (zero-based layer 8, head 3), using task-stratified row bootstrap. Pass
+`--control opposite-number` to use the same-example control. The recorded compact
+tables also contain prompt-cluster intervals used in the paper; the notebook
+reads those intervals directly.
+
+### 3. Re-run the checkpoint trajectory
+
+The recorded trajectory uses checkpoints at 5,000, 15,000, 30,000, 50,000 and
+65,000 updates, plus the best checkpoint at 77,500. Use the trajectory
+configuration to select the same 1,280-pair cohort at each checkpoint, without
+filtering on prediction accuracy. For example:
+
+```bash
+python scripts/run_patching.py \
+  --config configs/interpretability/activation_patching_wikipedia_v2_trajectory.yaml \
+  --checkpoint outputs/runs/gpt12_wikipedia_clone/checkpoints/step_005000.pt \
+  --output-dir outputs/interpretability/wikipedia_cross_language_v2_trajectory/step_005000 \
+  --device cuda
+```
+
+Repeat for the remaining checkpoints and evaluate SVA with `evaluate_sva.py` at
+each checkpoint. The full behavior evaluation contains 3,200 test pairs. The
+patching cohort covers 40% of those pairs, including 888 distractor pairs.
 
 Large artifacts are not distributed with this repository. Reproducing the
 reported numerical results from scratch therefore requires retraining the model.
